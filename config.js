@@ -6,4 +6,4 @@ export const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdX
 // On se connecte avec un pseudo : il devient pseudo@LOGIN_DOMAIN côté Supabase.
 export const LOGIN_DOMAIN = 'tcg-couple.app';
 
-export const COOLDOWN_HOURS = 4;
+export const COOLDOWN_HOURS = 2;
