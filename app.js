@@ -561,15 +561,21 @@ async function route() {
 window.addEventListener('hashchange', route);
 
 let booted = false;
-sb.auth.onAuthStateChange(async (event, session) => {
-  const was = state.session?.user?.id;
-  state.session = session;
-  if (!session) { state.viewUser = null; return route(); }
-  if (was === session.user.id && booted) return; // simple rafraîchissement du jeton
-  booted = true;
+async function boot() {
   $app.innerHTML = `<div class="loading">${backHTML()}</div>`;
   try { await loadAll(); } catch (err) { toast(err.message, 'err'); }
   route();
+}
+
+// Le rappel ne doit jamais attendre un autre appel Supabase : la bibliothèque garde un verrou
+// pendant son exécution, ce qui bloquait le chargement à la réouverture de l'app.
+sb.auth.onAuthStateChange((event, session) => {
+  const was = state.session?.user?.id;
+  state.session = session;
+  if (!session) { state.viewUser = null; setTimeout(route, 0); return; }
+  if (was === session.user.id && booted) return; // simple rafraîchissement du jeton
+  booted = true;
+  setTimeout(boot, 0);
 });
 
 if ('serviceWorker' in navigator) {

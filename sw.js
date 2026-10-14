@@ -1,5 +1,5 @@
 // Garde le site disponible hors ligne ; les données Supabase ne sont jamais mises en cache ici.
-const CACHE = 'nos-cartes-v2';
+const CACHE = 'nos-cartes-v3';
 const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'config.js', 'vendor/supabase.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png'];
 
 self.addEventListener('install', (e) => {
