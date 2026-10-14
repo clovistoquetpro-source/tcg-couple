@@ -163,19 +163,78 @@ input:focus, select:focus { outline: 2px solid var(--rose); outline-offset: 1px;
 .card-foot .stars { color: var(--rc); letter-spacing: -.05em; font-size: 7cqw; }
 .card-foot .num { font-variant-numeric: tabular-nums; }
 
-/* reflet holographique pour rare et plus */
+/* reflet lumineux pour rare et plus */
 .holo { position: absolute; inset: 0; border-radius: 14px; pointer-events: none; mix-blend-mode: color-dodge; opacity: 0; }
 .card.r-rare .holo, .card.r-epique .holo, .card.r-legendaire .holo {
-  opacity: .5;
-  background:
-    radial-gradient(circle at var(--mx) var(--my), rgba(255,255,255,.55), transparent 45%),
-    repeating-linear-gradient(115deg, rgba(255,0,128,.18) 0 6%, rgba(255,200,0,.18) 6% 12%, rgba(0,255,170,.18) 12% 18%, rgba(0,160,255,.18) 18% 24%, rgba(190,0,255,.18) 24% 30%);
-  background-size: 100% 100%, 300% 300%;
-  background-position: center, calc(var(--mx) * 1.2) calc(var(--my) * 1.2);
+  opacity: .35;
+  background: radial-gradient(circle at var(--mx) var(--my), rgba(255,255,255,.6), transparent 45%);
 }
-.card.r-legendaire .holo { opacity: .75; }
 .card.r-legendaire { box-shadow: 0 0 26px rgba(245,196,107,.45), 0 8px 22px rgba(0,0,0,.45); }
 .card.r-epique { box-shadow: 0 0 20px rgba(185,119,255,.35), 0 8px 22px rgba(0,0,0,.45); }
+
+/* badge de version */
+.vbadge {
+  position: absolute; top: 3cqw; left: 3cqw; z-index: 1;
+  font-size: 6cqw; font-weight: 700; padding: 1cqw 3cqw; border-radius: 99px;
+  text-transform: uppercase; letter-spacing: .06em; color: #1a1020;
+  box-shadow: 0 2px 8px rgba(0,0,0,.45);
+}
+
+/* version Holo : feuille arc-en-ciel qui bouge toute seule et suit le doigt */
+.card.v-holo {
+  background: linear-gradient(135deg, #ff7eb3, #ffd56b, #7dffcf, #6fb8ff, #c48bff, #ff7eb3);
+  background-size: 300% 300%;
+  animation: foil 6s linear infinite;
+  box-shadow: 0 0 26px rgba(185,119,255,.55), 0 8px 22px rgba(0,0,0,.45);
+}
+.card.v-holo .holo {
+  opacity: .7;
+  background:
+    radial-gradient(circle at var(--mx) var(--my), rgba(255,255,255,.6), transparent 40%),
+    repeating-linear-gradient(115deg, rgba(255,60,160,.22) 0 10px, rgba(255,210,60,.22) 10px 20px, rgba(60,255,190,.22) 20px 30px, rgba(60,170,255,.22) 30px 40px, rgba(190,80,255,.22) 40px 50px);
+  background-size: 100% 100%, 200% 200%;
+  animation: foil 8s linear infinite;
+}
+.card.v-holo .card-art::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; mix-blend-mode: overlay;
+  background: linear-gradient(115deg, transparent 20%, rgba(255,120,220,.35) 35%, rgba(120,255,230,.35) 50%, rgba(140,160,255,.35) 65%, transparent 80%);
+  background-size: 300% 100%;
+  animation: foil 4s linear infinite;
+}
+.card.v-holo .vbadge { background: linear-gradient(90deg, #ff9ad5, #ffe08a, #8fffd9, #9cc8ff, #d6a6ff); }
+@keyframes foil { from { background-position: 0% 50%, 0% 0%; } to { background-position: 300% 50%, 400% 400%; } }
+
+/* version Gold : cadre en or massif, paillettes et reflet qui balaie la carte */
+.card.v-gold {
+  background: linear-gradient(120deg, #7a5410 0%, #f9e08a 18%, #b8862b 34%, #fff6c8 50%, #a8761e 66%, #f6d66f 82%, #7a5410 100%);
+  background-size: 250% 100%;
+  animation: foil 5s linear infinite;
+  box-shadow: 0 0 34px rgba(255,205,90,.75), 0 8px 22px rgba(0,0,0,.45);
+}
+.card.v-gold .card-title {
+  background: linear-gradient(90deg, #ffe9a3, #f5c46b, #fff6d0, #e0a93a);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.card.v-gold .card-art { border-color: #e7b84e; }
+.card.v-gold .card-art img { filter: sepia(.25) saturate(1.15) contrast(1.05); }
+.card.v-gold .card-desc { color: #f1dfb4; }
+.card.v-gold .card-foot { color: #d9b878; }
+.card.v-gold .card-foot .stars { color: #ffd76a; text-shadow: 0 0 6px rgba(255,215,106,.8); }
+.card.v-gold .card-face {
+  background:
+    radial-gradient(circle, rgba(255,226,140,.55) 0 1px, transparent 1.6px) 3px 5px / 23px 29px,
+    radial-gradient(circle, rgba(255,246,210,.45) 0 1.2px, transparent 1.8px) 13px 17px / 37px 31px,
+    linear-gradient(180deg, #3a2a10, #1a1206 70%);
+}
+.card.v-gold .holo {
+  opacity: .8;
+  background:
+    radial-gradient(circle at var(--mx) var(--my), rgba(255,240,190,.6), transparent 40%),
+    linear-gradient(115deg, transparent 35%, rgba(255,240,180,.5) 50%, transparent 65%) 0 0 / 300% 100%;
+  animation: sweep 3.5s ease-in-out infinite;
+}
+.card.v-gold .vbadge { background: linear-gradient(90deg, #b8862b, #fff1b0, #d9a640); }
+@keyframes sweep { from { background-position: center, 150% 0; } to { background-position: center, -150% 0; } }
 
 .card.locked { cursor: default; background: var(--surface); box-shadow: none; border: 1px dashed color-mix(in srgb, var(--rc) 60%, transparent); }
 .card.locked .card-face { background: repeating-linear-gradient(45deg, #1c1322 0 10px, #20162a 10px 20px); justify-content: space-between; align-items: center; }
@@ -264,6 +323,8 @@ input:focus, select:focus { outline: 2px solid var(--rose); outline-offset: 1px;
 .flip[data-rarity="epique"]:not(.flipped) .card-back { box-shadow: 0 0 22px rgba(185,119,255,.7); }
 .flip[data-rarity="legendaire"]:not(.flipped) .card-back { box-shadow: 0 0 28px rgba(245,196,107,.9); animation: glow 1.2s ease-in-out infinite; }
 @keyframes glow { 50% { box-shadow: 0 0 40px rgba(245,196,107,1); } }
+.flip[data-variant="holo"]:not(.flipped) .card-back { box-shadow: 0 0 22px #ff7eb3, 0 0 34px #6fb8ff; animation: glow 1.2s ease-in-out infinite; }
+.flip[data-variant="gold"]:not(.flipped) .card-back { box-shadow: 0 0 30px #ffd76a, 0 0 50px #ffb43a; animation: glow 0.9s ease-in-out infinite; }
 .flip.burst::before {
   content: ""; position: absolute; inset: -30%; border-radius: 50%; z-index: -1; pointer-events: none;
   background: radial-gradient(circle, color-mix(in srgb, var(--burst, #fff) 70%, transparent), transparent 65%);
@@ -273,6 +334,8 @@ input:focus, select:focus { outline: 2px solid var(--rose); outline-offset: 1px;
 .flip[data-rarity="rare"] { --burst: var(--c-rare); }
 .flip[data-rarity="epique"] { --burst: var(--c-epique); }
 .flip[data-rarity="legendaire"] { --burst: var(--c-legendaire); }
+.flip[data-variant="holo"] { --burst: #ff9ad5; }
+.flip[data-variant="gold"] { --burst: #ffd76a; }
 @keyframes burst { from { transform: scale(.4); opacity: 1; } to { transform: scale(1.4); opacity: 0; } }
 .reveal-actions { display: flex; justify-content: center; gap: 10px; margin-top: 22px; }
 
@@ -296,6 +359,10 @@ input:focus, select:focus { outline: 2px solid var(--rose); outline-offset: 1px;
 .chip.r-epique, .pill.r-epique, .thumb.r-epique { --rc: var(--c-epique); }
 .chip.r-legendaire, .pill.r-legendaire, .thumb.r-legendaire { --rc: var(--c-legendaire); }
 .chip[class*="r-"]::before, .pill::before { content: "●"; color: var(--rc); margin-right: 5px; }
+.pill.v-holo { --rc: #ff9ad5; }
+.pill.v-holo::before { content: "✦"; background: linear-gradient(90deg, #ff9ad5, #8fffd9, #9cc8ff); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.pill.v-gold { --rc: #ffd76a; }
+.pill.v-gold::before { content: "★"; }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(105px, 1fr)); gap: 10px; }
 .empty { text-align: center; padding: 40px 0; }
 
@@ -309,6 +376,8 @@ input:focus, select:focus { outline: 2px solid var(--rose); outline-offset: 1px;
 .modal-inner { width: min(340px, 82vw); display: flex; flex-direction: column; align-items: center; gap: 14px; transform: scale(.9); transition: transform .3s cubic-bezier(.3,1.4,.5,1); }
 .modal.open .modal-inner { transform: none; }
 .modal-extra { text-align: center; }
+.modal-card { width: 100%; }
+.versions button:disabled { opacity: .45; cursor: default; }
 .modal-extra p { margin: 0; }
 .card.big { cursor: default; }
 

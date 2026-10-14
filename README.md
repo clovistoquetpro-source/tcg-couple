@@ -20,7 +20,14 @@ Un petit jeu de cartes à collectionner privé, avec nos photos. Un booster de 5
 | Épique | 4 % |
 | Légendaire | 1 % |
 
-La 5e carte de chaque booster est au moins peu commune. Les taux se changent dans `open_pack()` sur Supabase.
+La 5e carte de chaque booster est au moins peu commune.
+
+## Versions spéciales
+
+- **Holo** : une épique tirée a 1 chance sur 4 d'être en version Holo (feuille arc-en-ciel).
+- **Gold** : une légendaire tirée a 1 chance sur 4 d'être en version Gold (cadre en or).
+
+Chaque version se collectionne à part. Les taux se changent dans `open_pack()` sur Supabase (`holo_chance`, `gold_chance`).
 
 ## Mettre en ligne sur Vercel
 

@@ -16,6 +16,12 @@ const RARITIES = [
 ];
 const RARITY = Object.fromEntries(RARITIES.map((r, i) => [r.id, { ...r, rank: i }]));
 
+// Versions spéciales : Holo pour les épiques, Gold pour les légendaires
+const VARIANTS = { normal: 'Normale', holo: 'Holo', gold: 'Gold' };
+const SPECIAL = { epique: 'holo', legendaire: 'gold' };
+const variantsFor = (rarity) => (SPECIAL[rarity] ? ['normal', SPECIAL[rarity]] : ['normal']);
+const bestVariant = (entry) => (entry.variants.gold ? 'gold' : entry.variants.holo ? 'holo' : 'normal');
+
 const state = {
   session: null,
   me: null,          // profil de l'utilisateur connecté
@@ -87,14 +93,15 @@ function cardNumber(card) {
 
 function cardHTML(card, url, opts = {}) {
   const r = RARITY[card.rarity];
+  const v = opts.variant && opts.variant !== 'normal' ? opts.variant : '';
   const art = card.image_path && url(card.image_path)
     ? `<img src="${esc(url(card.image_path))}" alt="" loading="lazy" draggable="false">`
     : `<div class="placeholder">${esc(firstEmoji(card.description))}</div>`;
   return `
-    <div class="card r-${r.id}${opts.big ? ' big' : ''}" data-id="${card.id}">
+    <div class="card r-${r.id}${v ? ` v-${v}` : ''}${opts.big ? ' big' : ''}" data-id="${card.id}">
       <div class="card-face">
         <div class="card-head"><span class="card-title">${esc(card.title)}</span>${opts.count > 1 ? `<span class="count">×${opts.count}</span>` : ''}</div>
-        <div class="card-art">${art}${opts.isNew ? '<span class="new">Nouveau</span>' : ''}</div>
+        <div class="card-art">${art}${v ? `<span class="vbadge">${VARIANTS[v]}</span>` : ''}${opts.isNew ? '<span class="new">Nouveau</span>' : ''}</div>
         ${card.description ? `<div class="card-desc">${esc(card.description)}</div>` : ''}
         <div class="card-foot"><span class="stars">${'★'.repeat(r.stars)}</span><span>${r.label}</span><span class="num">${cardNumber(card)}</span></div>
       </div>
@@ -120,13 +127,22 @@ function attachTilt(el) {
   el.addEventListener('pointerleave', () => { el.style.setProperty('--rx', '0deg'); el.style.setProperty('--ry', '0deg'); });
 }
 
-async function showCardModal(card, extra = '') {
+// owned : { count, variants: {normal, holo, gold}, first_pulled_at } pour afficher les versions possédées
+async function showCardModal(card, { variant = 'normal', extra = '', owned = null } = {}) {
   const url = await signedUrls([card.image_path]);
   const m = document.createElement('div');
   m.className = 'modal';
-  m.innerHTML = `<div class="modal-inner">${cardHTML(card, url, { big: true })}<div class="modal-extra">${extra}</div><button class="btn ghost" data-close>Fermer</button></div>`;
+  const versions = owned && variantsFor(card.rarity).length > 1
+    ? `<div class="seg versions">${variantsFor(card.rarity).map((v) => `<button data-variant="${v}" aria-selected="${v === variant}" ${owned.variants[v] ? '' : 'disabled'}>${VARIANTS[v]} ${owned.variants[v] ? `×${owned.variants[v]}` : '🔒'}</button>`).join('')}</div>`
+    : '';
+  m.innerHTML = `<div class="modal-inner"><div class="modal-card">${cardHTML(card, url, { big: true, variant })}</div>${versions}<div class="modal-extra">${extra}</div><button class="btn ghost" data-close>Fermer</button></div>`;
   document.body.appendChild(m);
   attachTilt(m.querySelector('.card'));
+  m.querySelectorAll('[data-variant]').forEach((b) => b.addEventListener('click', () => {
+    m.querySelectorAll('[data-variant]').forEach((x) => x.setAttribute('aria-selected', x === b));
+    m.querySelector('.modal-card').innerHTML = cardHTML(card, url, { big: true, variant: b.dataset.variant });
+    attachTilt(m.querySelector('.card'));
+  }));
   requestAnimationFrame(() => m.classList.add('open'));
   m.addEventListener('click', (e) => {
     if (e.target === m || e.target.closest('[data-close]')) { m.classList.remove('open'); setTimeout(() => m.remove(), 250); }
@@ -148,7 +164,12 @@ async function loadAll() {
   state.owned = new Map();
   for (const row of o.data) {
     if (!state.owned.has(row.user_id)) state.owned.set(row.user_id, new Map());
-    state.owned.get(row.user_id).set(row.card_id, row);
+    const mine = state.owned.get(row.user_id);
+    const e = mine.get(row.card_id) || { count: 0, variants: {}, first_pulled_at: row.first_pulled_at };
+    e.count += row.count;
+    e.variants[row.variant || 'normal'] = row.count;
+    if (row.first_pulled_at < e.first_pulled_at) e.first_pulled_at = row.first_pulled_at;
+    mine.set(row.card_id, e);
   }
   if (!state.viewUser) state.viewUser = state.me.id;
 }
@@ -248,7 +269,8 @@ async function openPack(packBtn) {
 
   const url = await signedUrls(data.map((c) => c.image_path));
   // on révèle de la moins rare à la plus rare
-  const pulled = data.map((c, i) => ({ ...c, i })).sort((a, b) => RARITY[a.rarity].rank - RARITY[b.rarity].rank || a.i - b.i);
+  const score = (c) => RARITY[c.rarity].rank + (c.variant && c.variant !== 'normal' ? 0.5 : 0);
+  const pulled = data.map((c, i) => ({ ...c, i })).sort((a, b) => score(a) - score(b) || a.i - b.i);
 
   packBtn.classList.remove('shake');
   packBtn.classList.add('torn');
@@ -260,10 +282,10 @@ async function openPack(packBtn) {
   reveal.innerHTML = `
     <div class="reveal-grid">
       ${pulled.map((c, i) => `
-        <div class="flip" style="--d:${i * 90}ms" data-rarity="${c.rarity}" tabindex="0" role="button" aria-label="Retourner la carte">
+        <div class="flip" style="--d:${i * 90}ms" data-rarity="${c.rarity}" data-variant="${c.variant || 'normal'}" tabindex="0" role="button" aria-label="Retourner la carte">
           <div class="flip-inner">
             <div class="flip-back">${backHTML()}</div>
-            <div class="flip-front">${cardHTML(c, url, { isNew: c.is_new })}</div>
+            <div class="flip-front">${cardHTML(c, url, { isNew: c.is_new, variant: c.variant })}</div>
           </div>
         </div>`).join('')}
     </div>
@@ -278,17 +300,18 @@ async function openPack(packBtn) {
       document.getElementById('flip-all').hidden = true;
       document.getElementById('to-collection').hidden = false;
       const news = pulled.filter((c) => c.is_new).length;
-      toast(news ? `${news} nouvelle${news > 1 ? 's' : ''} carte${news > 1 ? 's' : ''} !` : 'Que des doubles cette fois');
+      const special = pulled.find((c) => c.variant === 'gold') || pulled.find((c) => c.variant === 'holo');
+      toast(special ? `Une carte ${VARIANTS[special.variant]} !` : news ? `${news} nouvelle${news > 1 ? 's' : ''} carte${news > 1 ? 's' : ''} !` : 'Que des doubles cette fois');
     }
   };
   const flip = (f) => {
     if (f.classList.contains('flipped')) {
       const card = pulled[flips.indexOf(f)];
-      showCardModal(card);
+      showCardModal(card, { variant: card.variant });
       return;
     }
     f.classList.add('flipped');
-    if (RARITY[f.dataset.rarity].rank >= 2) f.classList.add('burst');
+    if (RARITY[f.dataset.rarity].rank >= 2 || f.dataset.variant !== 'normal') f.classList.add('burst');
     done();
   };
   flips.forEach((f) => {
@@ -305,6 +328,10 @@ async function renderCollection() {
   const owned = state.owned.get(viewing.id) || new Map();
   const total = state.cards.length;
   const have = state.cards.filter((c) => owned.has(c.id)).length;
+  const specials = Object.entries(SPECIAL).map(([rarity, v]) => {
+    const pool = state.cards.filter((c) => c.rarity === rarity);
+    return pool.length ? `<span class="pill v-${v}">${VARIANTS[v]} ${pool.filter((c) => owned.get(c.id)?.variants[v]).length}/${pool.length}</span>` : '';
+  }).join('');
   const list = state.cards.filter((c) => state.filter === 'all' || c.rarity === state.filter);
   const url = await signedUrls(list.filter((c) => owned.has(c.id)).map((c) => c.image_path));
 
@@ -317,6 +344,7 @@ async function renderCollection() {
         </div>
       </header>
       <div class="progress"><div class="bar"><span style="width:${total ? (have / total) * 100 : 0}%"></span></div><span>${have} / ${total}</span></div>
+      ${specials ? `<div class="pills">${specials}</div>` : ''}
       <div class="chips">
         <button class="chip" aria-pressed="${state.filter === 'all'}" data-filter="all">Toutes</button>
         ${RARITIES.map((r) => {
@@ -325,7 +353,7 @@ async function renderCollection() {
           return `<button class="chip r-${r.id}" aria-pressed="${state.filter === r.id}" data-filter="${r.id}">${r.label} <small>${h}/${n.length}</small></button>`;
         }).join('')}
       </div>
-      ${list.length ? `<div class="grid">${list.map((c) => owned.has(c.id) ? cardHTML(c, url, { count: owned.get(c.id).count }) : lockedCardHTML(c)).join('')}</div>`
+      ${list.length ? `<div class="grid">${list.map((c) => owned.has(c.id) ? cardHTML(c, url, { count: owned.get(c.id).count, variant: bestVariant(owned.get(c.id)) }) : lockedCardHTML(c)).join('')}</div>`
         : `<p class="empty muted">Aucune carte ici pour l'instant.</p>`}
     </section>`;
 
@@ -334,7 +362,11 @@ async function renderCollection() {
   $app.querySelectorAll('.grid .card:not(.locked)').forEach((el) => el.addEventListener('click', () => {
     const card = state.cards.find((c) => c.id === Number(el.dataset.id));
     const o = owned.get(card.id);
-    showCardModal(card, `<p class="muted">Obtenue le ${new Date(o.first_pulled_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}${o.count > 1 ? ` · ${o.count} exemplaires` : ''}</p>`);
+    showCardModal(card, {
+      variant: bestVariant(o),
+      owned: o,
+      extra: `<p class="muted">Obtenue le ${new Date(o.first_pulled_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}${o.count > 1 ? ` · ${o.count} exemplaires` : ''}</p>`,
+    });
   }));
 }
 
