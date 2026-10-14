@@ -229,6 +229,7 @@ async function loadAll() {
   state.cards = c.data.sort((a, b) => RARITY[a.rarity].rank - RARITY[b.rarity].rank || a.id - b.id);
   state.owned = new Map();
   for (const row of o.data) {
+    if (row.count <= 0) continue; // carte retirée de la collection
     if (!state.owned.has(row.user_id)) state.owned.set(row.user_id, new Map());
     const mine = state.owned.get(row.user_id);
     const e = mine.get(row.card_id) || { count: 0, variants: {}, first_pulled_at: row.first_pulled_at };
@@ -591,6 +592,325 @@ async function renderAjouter() {
   });
 }
 
+/* ---------- mini-jeu : Memory ---------- */
+
+const MEMORY_PAIRS = 6;
+const todayParis = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Paris' });
+
+function renderJeu() {
+  const today = todayParis();
+  const gamesToday = state.me.game_coins_on === today ? Number(state.me.game_coins_today || 0) : 0;
+  const cap = Number(state.settings?.games_daily_cap ?? 60);
+  $app.innerHTML = `
+    <section>
+      <header class="page-head">
+        <h1>Play</h1>
+        <p class="coins">${Number(state.me.coins ?? 0)} ${COIN}</p>
+      </header>
+      <a class="game-card blocks-card" href="#/blocks">
+        <span class="game-art" aria-hidden="true">${['#ff6f9c', '#f5c46b', '#52c98f', '#5aa2ff', '#b977ff', '#ff6f9c', '#f5c46b', '#52c98f', '#5aa2ff'].map((c, i) => `<i style="background:${[0, 1, 2, 4, 6].includes(i) ? c : 'transparent'}"></i>`).join('')}</span>
+        <span><b>Blocks</b><small class="muted">Fill rows and columns to clear them. Each line gives ${Number(state.settings?.blocks_coins_per_line ?? 3)} ${COIN}. Today: ${gamesToday}/${cap} ${COIN}.</small></span>
+      </a>
+      <a class="game-card" href="#/memory">
+        <span class="game-art memory-art" aria-hidden="true">${backHTML()}</span>
+        <span><b>Memory</b><small class="muted">Find the pairs among your cards. ${state.me.memory_reward_on === today ? 'Today\'s coins already earned.' : `First game of the day: up to 50 ${COIN}.`}</small></span>
+      </a>
+    </section>`;
+}
+
+function renderMemory() {
+  const ownedIds = [...(state.owned.get(state.me.id)?.keys() || [])];
+  const pool = state.cards.filter((c) => ownedIds.includes(c.id));
+  const other = partner();
+  const rewardDone = state.me.memory_reward_on === todayParis();
+  const best = (p) => (p?.memory_best ? `${p.memory_best} moves` : '—');
+
+  $app.innerHTML = `
+    <section class="jeu">
+      <a class="back-link" href="#/jeu">← Games</a>
+      <header class="page-head">
+        <h1>Memory</h1>
+        <p class="coins" id="coins">${Number(state.me.coins ?? 0)} ${COIN}</p>
+      </header>
+      <p class="muted">Find the pairs among your own cards in as few moves as possible. ${rewardDone
+        ? 'You already earned today\'s coins: play just for fun or to beat your record.'
+        : `Your first game of the day earns up to 50 ${COIN}.`}</p>
+      <div class="scores">
+        <div><small class="muted">My record</small><b>${best(state.me)}</b></div>
+        ${other ? `<div><small class="muted">${esc(other.display_name || 'Partner')}'s record</small><b>${best(other)}</b></div>` : ''}
+      </div>
+      ${pool.length < MEMORY_PAIRS
+        ? `<p class="panel muted">Collect at least ${MEMORY_PAIRS} different cards to play (you have ${pool.length}).</p>`
+        : `<div class="memory-bar"><span id="moves">0 moves</span><span id="clock">0:00</span></div>
+           <div class="memory" id="board"></div>
+           <div class="reveal-actions"><button class="btn primary" id="start">Start a game</button></div>`}
+    </section>`;
+
+  if (pool.length >= MEMORY_PAIRS) document.getElementById('start').addEventListener('click', () => startMemory(pool));
+}
+
+async function startMemory(pool) {
+  const picked = [...pool].sort(() => Math.random() - 0.5).slice(0, MEMORY_PAIRS);
+  const deck = [...picked, ...picked].map((c, i) => ({ c, i })).sort(() => Math.random() - 0.5);
+  const url = await signedUrls(picked.map((c) => c.image_path));
+  const board = document.getElementById('board');
+  const startBtn = document.getElementById('start');
+  startBtn.hidden = true;
+  board.innerHTML = deck.map(({ c }, k) => `
+    <button class="tile r-${c.rarity}" data-k="${k}" data-id="${c.id}" aria-label="Hidden card">
+      <span class="tile-inner">
+        <span class="tile-back">${backHTML()}</span>
+        <span class="tile-front">${c.image_path && url(c.image_path) ? `<img src="${esc(url(c.image_path))}" alt="" draggable="false">` : `<span class="placeholder">${esc(firstEmoji(c.description))}</span>`}</span>
+      </span>
+    </button>`).join('');
+
+  let first = null, lock = false, moves = 0, found = 0;
+  const t0 = Date.now();
+  const clock = setInterval(() => {
+    const el = document.getElementById('clock');
+    if (!el) return clearInterval(clock);
+    const sec = Math.floor((Date.now() - t0) / 1000);
+    el.textContent = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+  }, 250);
+
+  board.querySelectorAll('.tile').forEach((tile) => tile.addEventListener('click', async () => {
+    if (lock || tile.classList.contains('up')) return;
+    tile.classList.add('up');
+    if (!first) { first = tile; return; }
+    moves++;
+    document.getElementById('moves').textContent = `${moves} move${moves > 1 ? 's' : ''}`;
+    if (first.dataset.id === tile.dataset.id) {
+      first.classList.add('matched'); tile.classList.add('matched');
+      first = null;
+      if (++found === MEMORY_PAIRS) {
+        clearInterval(clock);
+        finishMemory(moves, Math.round((Date.now() - t0) / 1000));
+      }
+      return;
+    }
+    lock = true;
+    const a = first;
+    first = null;
+    setTimeout(() => { a.classList.remove('up'); tile.classList.remove('up'); lock = false; }, 850);
+  }));
+}
+
+async function finishMemory(moves, seconds) {
+  const { data, error } = await sb.rpc('claim_memory', { moves, seconds });
+  const time = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+  let line = '';
+  if (error) line = `<p class="muted">${esc(error.message)}</p>`;
+  else {
+    const newRecord = !state.me.memory_best || moves < state.me.memory_best;
+    state.me.coins = data.coins;
+    state.me.memory_best = data.best;
+    if (data.reward) state.me.memory_reward_on = todayParis();
+    document.getElementById('coins').textContent = `${data.coins} ${COIN}`;
+    line = `${data.reward ? `<p class="big">+${data.reward} ${COIN}</p>` : '<p class="muted">Today\'s coins were already earned.</p>'}${newRecord ? '<p class="record">New record!</p>' : ''}`;
+  }
+  const done = document.createElement('div');
+  done.className = 'panel memory-done';
+  done.innerHTML = `<h2>All pairs found</h2><p>${moves} moves · ${time}</p>${line}<button class="btn primary" id="again">Play again</button>`;
+  document.getElementById('board').after(done);
+  done.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  document.getElementById('again').addEventListener('click', () => renderMemory());
+}
+
+/* ---------- mini-jeu : Blocks ---------- */
+
+const BOARD = 8;
+const SHAPES = [
+  [[0, 0]],
+  [[0, 0], [0, 1]], [[0, 0], [1, 0]],
+  [[0, 0], [0, 1], [0, 2]], [[0, 0], [1, 0], [2, 0]],
+  [[0, 0], [0, 1], [0, 2], [0, 3]], [[0, 0], [1, 0], [2, 0], [3, 0]],
+  [[0, 0], [0, 1], [0, 2], [0, 3], [0, 4]], [[0, 0], [1, 0], [2, 0], [3, 0], [4, 0]],
+  [[0, 0], [0, 1], [1, 0], [1, 1]],
+  [[0, 0], [0, 1], [0, 2], [1, 0], [1, 1], [1, 2], [2, 0], [2, 1], [2, 2]],
+  [[0, 0], [1, 0], [1, 1]], [[0, 0], [0, 1], [1, 0]], [[0, 0], [0, 1], [1, 1]], [[0, 1], [1, 0], [1, 1]],
+  [[0, 0], [1, 0], [2, 0], [2, 1]], [[0, 0], [0, 1], [0, 2], [1, 0]], [[0, 0], [0, 1], [1, 1], [2, 1]], [[0, 2], [1, 0], [1, 1], [1, 2]],
+  [[0, 0], [0, 1], [0, 2], [1, 1]], [[0, 1], [1, 0], [1, 1], [2, 1]],
+  [[0, 0], [0, 1], [1, 1], [1, 2]], [[0, 1], [1, 0], [1, 1], [2, 0]],
+  [[0, 0], [1, 0], [2, 0], [2, 1], [2, 2]],
+];
+const BLOCK_COLORS = ['#ff6f9c', '#f5c46b', '#52c98f', '#5aa2ff', '#b977ff', '#ff9a5a'];
+
+const newPiece = () => ({
+  cells: SHAPES[Math.floor(Math.random() * SHAPES.length)],
+  color: BLOCK_COLORS[Math.floor(Math.random() * BLOCK_COLORS.length)],
+});
+const pieceSize = (p) => [Math.max(...p.cells.map((c) => c[0])) + 1, Math.max(...p.cells.map((c) => c[1])) + 1];
+
+function loadBlocksGame() {
+  try {
+    const g = JSON.parse(localStorage.getItem('blocksGame') || 'null');
+    if (g && g.grid?.length === BOARD * BOARD && !g.over) return g;
+  } catch { /* rien d'enregistré */ }
+  return { grid: Array(BOARD * BOARD).fill(null), pieces: [newPiece(), newPiece(), newPiece()], score: 0, lines: 0, over: false };
+}
+function saveBlocksGame(g) {
+  try { localStorage.setItem('blocksGame', JSON.stringify(g)); } catch { /* stockage indisponible */ }
+}
+
+const canPlace = (grid, p, r, c) => p.cells.every(([dr, dc]) => {
+  const rr = r + dr, cc = c + dc;
+  return rr >= 0 && cc >= 0 && rr < BOARD && cc < BOARD && !grid[rr * BOARD + cc];
+});
+const fitsSomewhere = (grid, p) => {
+  for (let r = 0; r < BOARD; r++) for (let c = 0; c < BOARD; c++) if (canPlace(grid, p, r, c)) return true;
+  return false;
+};
+
+function pieceHTML(p, cell) {
+  const [h, w] = pieceSize(p);
+  const on = new Set(p.cells.map(([r, c]) => `${r},${c}`));
+  let cells = '';
+  for (let r = 0; r < h; r++) for (let c = 0; c < w; c++) cells += `<i${on.has(`${r},${c}`) ? ` style="background:${p.color}"` : ''}></i>`;
+  return `<div class="piece" style="grid-template-columns:repeat(${w},${cell}px);grid-template-rows:repeat(${h},${cell}px)">${cells}</div>`;
+}
+
+function renderBlocks() {
+  const g = loadBlocksGame();
+  const today = todayParis();
+  const cap = Number(state.settings?.games_daily_cap ?? 60);
+  let earnedToday = state.me.game_coins_on === today ? Number(state.me.game_coins_today || 0) : 0;
+
+  $app.innerHTML = `
+    <section class="blocks-page">
+      <a class="back-link" href="#/jeu">← Games</a>
+      <header class="page-head">
+        <h1>Blocks</h1>
+        <p class="coins" id="coins">${Number(state.me.coins ?? 0)} ${COIN}</p>
+      </header>
+      <div class="scores">
+        <div><small class="muted">Score</small><b id="score">${g.score}</b></div>
+        <div><small class="muted">Record</small><b id="best">${state.me.blocks_best ?? 0}</b></div>
+        <div><small class="muted">Coins today</small><b id="today">${earnedToday}/${cap}</b></div>
+      </div>
+      <div class="board" id="board">${g.grid.map(() => '<i></i>').join('')}</div>
+      <div class="tray" id="tray">${[0, 1, 2].map((i) => `<div class="slot" data-i="${i}"></div>`).join('')}</div>
+      <div id="blocks-end"></div>
+      <div class="reveal-actions"><button class="btn ghost" id="restart">New game</button></div>
+    </section>`;
+
+  const board = document.getElementById('board');
+  const cellsEl = [...board.children];
+  const tray = document.getElementById('tray');
+
+  const paint = () => {
+    g.grid.forEach((col, k) => { cellsEl[k].style.background = col || ''; cellsEl[k].className = col ? 'on' : ''; });
+    tray.querySelectorAll('.slot').forEach((slot) => {
+      const p = g.pieces[slot.dataset.i];
+      slot.innerHTML = p ? pieceHTML(p, 20) : '';
+      slot.classList.toggle('blocked', !!p && !fitsSomewhere(g.grid, p));
+    });
+    document.getElementById('score').textContent = g.score;
+  };
+
+  const gameOver = async () => {
+    g.over = true;
+    saveBlocksGame(g);
+    const { data } = await sb.rpc('blocks_end', { score: g.score });
+    const record = data && data.best === g.score && g.score > 0 && g.score > Number(state.me.blocks_best ?? 0);
+    if (data) { state.me.blocks_best = data.best; document.getElementById('best').textContent = data.best; }
+    document.getElementById('blocks-end').innerHTML = `
+      <div class="panel memory-done"><h2>No more room</h2><p>Score ${g.score} · ${g.lines} line${g.lines > 1 ? 's' : ''}</p>${record ? '<p class="record">New record!</p>' : ''}<button class="btn primary" id="again">Play again</button></div>`;
+    document.getElementById('again').addEventListener('click', restart);
+  };
+
+  const restart = () => {
+    try { localStorage.removeItem('blocksGame'); } catch { /* rien */ }
+    renderBlocks();
+  };
+  document.getElementById('restart').addEventListener('click', () => {
+    if (g.over || g.score === 0 || confirm('Start a new game? The current one will be lost.')) restart();
+  });
+
+  const place = async (i, r, c) => {
+    const p = g.pieces[i];
+    p.cells.forEach(([dr, dc]) => { g.grid[(r + dr) * BOARD + (c + dc)] = p.color; });
+    g.pieces[i] = null;
+    g.score += p.cells.length;
+
+    const rows = [], cols = [];
+    for (let k = 0; k < BOARD; k++) {
+      if ([...Array(BOARD).keys()].every((j) => g.grid[k * BOARD + j])) rows.push(k);
+      if ([...Array(BOARD).keys()].every((j) => g.grid[j * BOARD + k])) cols.push(k);
+    }
+    const lines = rows.length + cols.length;
+    if (lines) {
+      const clear = new Set();
+      rows.forEach((k) => { for (let j = 0; j < BOARD; j++) clear.add(k * BOARD + j); });
+      cols.forEach((k) => { for (let j = 0; j < BOARD; j++) clear.add(j * BOARD + k); });
+      paint();
+      clear.forEach((k) => cellsEl[k].classList.add('clearing'));
+      await new Promise((res) => setTimeout(res, 280));
+      clear.forEach((k) => { g.grid[k] = null; });
+      g.lines += lines;
+      g.score += lines * lines * 10;
+      sb.rpc('blocks_lines', { lines }).then(({ data }) => {
+        if (!data) return;
+        state.me.coins = data.coins;
+        state.me.game_coins_on = today;
+        state.me.game_coins_today = data.today;
+        earnedToday = data.today;
+        document.getElementById('coins').textContent = `${data.coins} ${COIN}`;
+        document.getElementById('today').textContent = `${data.today}/${data.cap}`;
+        toast(data.gain ? `${lines > 1 ? `${lines} lines! ` : ''}+${data.gain} ${COIN}` : `${lines > 1 ? `${lines} lines! ` : 'Line! '}Daily coin limit reached`);
+      });
+    }
+    if (g.pieces.every((x) => !x)) g.pieces = [newPiece(), newPiece(), newPiece()];
+    paint();
+    saveBlocksGame(g);
+    if (g.pieces.every((x) => !x || !fitsSomewhere(g.grid, x))) gameOver();
+  };
+
+  // glisser une pièce du plateau du bas vers la grille
+  tray.querySelectorAll('.slot').forEach((slot) => slot.addEventListener('pointerdown', (e) => {
+    const i = Number(slot.dataset.i);
+    const p = g.pieces[i];
+    if (!p || g.over) return;
+    e.preventDefault();
+    const rect = board.getBoundingClientRect();
+    const cell = rect.width / BOARD;
+    const [h, w] = pieceSize(p);
+    const ghost = document.createElement('div');
+    ghost.className = 'drag-ghost';
+    ghost.innerHTML = pieceHTML(p, cell - 2);
+    document.body.appendChild(ghost);
+    slot.classList.add('dragging');
+    const lift = e.pointerType === 'mouse' ? 0 : cell * 1.6; // au doigt, la pièce passe au-dessus pour rester visible
+    let target = null;
+
+    const move = (ev) => {
+      const x = ev.clientX - (w * cell) / 2;
+      const y = ev.clientY - (h * cell) / 2 - lift;
+      ghost.style.transform = `translate(${x}px, ${y}px)`;
+      const r = Math.round((y - rect.top) / cell), c = Math.round((x - rect.left) / cell);
+      cellsEl.forEach((el) => el.classList.remove('preview'));
+      target = canPlace(g.grid, p, r, c) ? [r, c] : null;
+      if (target) p.cells.forEach(([dr, dc]) => cellsEl[(r + dr) * BOARD + (c + dc)].classList.add('preview'));
+      board.style.setProperty('--preview', p.color);
+    };
+    const end = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', end);
+      window.removeEventListener('pointercancel', end);
+      ghost.remove();
+      slot.classList.remove('dragging');
+      cellsEl.forEach((el) => el.classList.remove('preview'));
+      if (target) place(i, ...target);
+    };
+    move(e);
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', end);
+    window.addEventListener('pointercancel', end);
+  }));
+
+  paint();
+  if (g.pieces.every((x) => !x || !fitsSomewhere(g.grid, x))) gameOver();
+}
+
 /* ---------- profil ---------- */
 
 function renderProfil() {
@@ -617,6 +937,10 @@ function renderProfil() {
         <p class="muted small">Coins for each duplicate (×2 for Holo and Gold):</p>
         <div class="rates-grid">
           ${RARITIES.map((r) => `<label><span class="pill r-${r.id}">${r.label}</span><span class="pct"><input name="coins_${r.id}" type="number" inputmode="numeric" min="0" step="1" value="${coinValue(r.id)}">${COIN}</span></label>`).join('')}
+        </div>
+        <div class="rates-grid">
+          <label>Blocks: coins per line<span class="pct"><input name="blocks_coins_per_line" type="number" inputmode="numeric" min="0" step="1" value="${Number(state.settings?.blocks_coins_per_line ?? 3)}">${COIN}</span></label>
+          <label>Daily coin limit for games<span class="pct"><input name="games_daily_cap" type="number" inputmode="numeric" min="0" step="1" value="${Number(state.settings?.games_daily_cap ?? 60)}">${COIN}</span></label>
         </div>
         <button class="btn" type="submit">Save settings</button>
       </form>
@@ -662,7 +986,7 @@ function renderProfil() {
     if (Math.round(rateSum() * 100) / 100 !== 100) return toast('The rarity rates must add up to 100%', 'err');
     const patch = { updated_at: new Date().toISOString() };
     for (const k of [...RARITIES.map((r) => `rate_${r.id}`), 'holo_chance', 'gold_chance', 'cooldown_hours']) patch[k] = Number(ratesForm[k].value);
-    for (const k of ['pack_price', ...RARITIES.map((r) => `coins_${r.id}`)]) patch[k] = Math.round(Number(ratesForm[k].value));
+    for (const k of ['pack_price', 'blocks_coins_per_line', 'games_daily_cap', ...RARITIES.map((r) => `coins_${r.id}`)]) patch[k] = Math.round(Number(ratesForm[k].value));
     const { data, error } = await sb.from('game_settings').update(patch).eq('id', 1).select().maybeSingle();
     if (error) return toast(error.message, 'err');
     if (data) state.settings = data;
@@ -672,7 +996,7 @@ function renderProfil() {
 
 /* ---------- routeur ---------- */
 
-const routes = { booster: renderBooster, collection: renderCollection, ajouter: renderAjouter, profil: renderProfil };
+const routes = { booster: renderBooster, collection: renderCollection, jeu: renderJeu, blocks: renderBlocks, memory: renderMemory, ajouter: renderAjouter, profil: renderProfil };
 
 async function route() {
   clearInterval(state.timer);
@@ -680,7 +1004,8 @@ async function route() {
   const name = (location.hash.replace(/^#\/?/, '') || 'booster').split('?')[0];
   const page = routes[name] ? name : 'booster';
   $nav.hidden = false;
-  $nav.querySelectorAll('a').forEach((a) => a.classList.toggle('active', a.dataset.route === page));
+  const tab = ['blocks', 'memory'].includes(page) ? 'jeu' : page;
+  $nav.querySelectorAll('a').forEach((a) => a.classList.toggle('active', a.dataset.route === tab));
   try {
     await routes[page]();
   } catch (err) {

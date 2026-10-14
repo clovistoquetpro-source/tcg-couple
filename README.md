@@ -34,6 +34,13 @@ Chaque version se collectionne à part.
 
 Chaque doublon rapporte des pièces (Commune 5, Peu commune 10, Rare 25, Épique 60, Légendaire 150, ×2 en Holo ou Gold). Un pack s'achète 150 pièces avec `buy_pack()`, sans attendre. Les valeurs se règlent dans Profile → Game settings.
 
+## Jeux (onglet Play)
+
+- **Blocks** : on glisse des formes sur une grille 8×8, chaque ligne ou colonne pleine disparaît. Chaque ligne rapporte 3 pièces (`blocks_lines()`), avec un plafond de 60 pièces par jour partagé entre les jeux. La partie est gardée dans le téléphone si on quitte la page.
+- **Memory** : 6 paires de vos cartes. La première partie du jour rapporte jusqu'à 50 pièces selon le nombre de coups (`claim_memory()`).
+
+Le gain par ligne et le plafond du jour se règlent dans Profile → Game settings.
+
 ## Mettre en ligne sur Vercel
 
 1. Aller sur https://vercel.com/new et se connecter avec GitHub.
