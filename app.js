@@ -54,10 +54,19 @@ function fmtDuration(ms) {
   return [h, m, sec].map((n) => String(n).padStart(2, '0')).join(':');
 }
 
-function nextPackAt(profile) {
-  if (!profile?.last_pack_at) return 0;
-  return new Date(profile.last_pack_at).getTime() + cooldownMs();
+const maxPacks = () => Math.max(1, Number(state.settings?.max_stored_packs ?? 2));
+
+// Packs gratuits en réserve : un de plus à chaque délai écoulé depuis pack_clock, jusqu'à maxPacks().
+function packStatus(profile) {
+  const cd = cooldownMs(), cap = maxPacks(), now = Date.now();
+  const clock = profile?.pack_clock ?? profile?.last_pack_at;
+  const start = clock ? new Date(clock).getTime() : -Infinity;
+  if (start <= now - cap * cd) return { avail: cap, cap, next: null, start: now - cap * cd };
+  const avail = Math.floor((now - start) / cd);
+  return { avail, cap, next: start + (avail + 1) * cd, start };
 }
+
+const fmtShort = (ms) => fmtDuration(ms).slice(0, 5).replace(':', 'h ') + 'm';
 
 /* ---------- taux de drop (lus dans game_settings, les mêmes que ceux du serveur) ---------- */
 
@@ -109,7 +118,7 @@ function showRatesModal() {
         <thead><tr><th>Rarity</th><th>Per card</th><th>At least 1 per pack</th><th>Cards</th></tr></thead>
         <tbody>${rows}${specialRows}</tbody>
       </table>
-      <p class="muted small">Each pack has 5 cards. The 5th card is always Uncommon or better. A free pack every ${Number(state.settings?.cooldown_hours ?? COOLDOWN_HOURS)} h. Tap any card to see its own drop chance.</p>
+      <p class="muted small">Each pack has 5 cards. The 5th card is always Uncommon or better. A free pack every ${Number(state.settings?.cooldown_hours ?? COOLDOWN_HOURS)} h, and up to ${maxPacks()} can stack up while you wait. Tap any card to see its own drop chance.</p>
       <h2>Coins</h2>
       <p class="muted small">Every duplicate gives coins: ${RARITIES.map((r) => `${r.label} ${coinValue(r.id)}`).join(', ')}. Holo and Gold duplicates give twice as much. A pack costs ${packPrice()} ${COIN}.</p>
       <button class="btn ghost" data-close>Close</button>
@@ -275,10 +284,10 @@ function backHTML() {
 }
 
 async function renderBooster() {
-  const next = nextPackAt(state.me);
-  const ready = Date.now() >= next;
+  const mine = packStatus(state.me);
+  const ready = mine.avail > 0;
   const other = partner();
-  const otherReady = other && Date.now() >= nextPackAt(other);
+  const theirs = other && packStatus(other);
 
   $app.innerHTML = `
     <section class="booster-page">
@@ -287,7 +296,8 @@ async function renderBooster() {
         <p class="coins" id="coins" title="Your coins">${Number(state.me.coins ?? 0)} ${COIN}</p>
       </header>
       <div class="pack-zone">
-        <button class="pack${ready ? ' ready' : ''}" id="pack" ${ready ? '' : 'disabled'} aria-label="Open the pack">
+        <button class="pack${ready ? ' ready' : ''}${mine.avail > 1 ? ' stacked' : ''}" id="pack" ${ready ? '' : 'disabled'} aria-label="Open the pack">
+          ${mine.avail > 1 ? `<span class="pack-count">×${mine.avail}</span>` : ''}
           <span class="pack-top"></span>
           <span class="pack-body">
             <span class="pack-emblem">♥</span>
@@ -297,8 +307,8 @@ async function renderBooster() {
         </button>
         <div class="pack-cta">
           ${ready
-            ? `<p class="big">Your pack is ready</p><p class="muted">Tap it to open</p>`
-            : `<p class="muted">Next pack in</p><p class="countdown" id="countdown">${fmtDuration(next - Date.now())}</p>`}
+            ? `<p class="big">${mine.avail > 1 ? `${mine.avail} packs ready` : 'Your pack is ready'}</p><p class="muted">Tap to open${mine.next ? ` · next one in <span id="countdown">${fmtDuration(mine.next - Date.now())}</span>` : ''}</p>`
+            : `<p class="muted">Next pack in</p><p class="countdown" id="countdown">${fmtDuration(mine.next - Date.now())}</p>`}
           <div class="shop">
             <button class="btn buy" id="buy-btn" type="button" ${Number(state.me.coins ?? 0) >= packPrice() ? '' : 'disabled'}>Buy a pack · ${packPrice()} ${COIN}</button>
             ${Number(state.me.coins ?? 0) >= packPrice() ? '' : `<p class="muted small">${packPrice() - Number(state.me.coins ?? 0)} ${COIN} to go. Duplicates give coins.</p>`}
@@ -306,14 +316,14 @@ async function renderBooster() {
           <button class="link-btn" id="rates-btn" type="button">Drop rates</button>
         </div>
       </div>
-      ${other ? `<p class="partner muted">${esc(other.display_name || 'Your partner')} ${otherReady ? 'has a pack waiting ✦' : `can open their next pack in ${fmtDuration(nextPackAt(other) - Date.now()).slice(0, 5).replace(':', 'h ')}m`}</p>` : ''}
+      ${other ? `<p class="partner muted">${esc(other.display_name || 'Your partner')} ${theirs.avail > 1 ? `has ${theirs.avail} packs waiting ✦` : theirs.avail === 1 ? 'has a pack waiting ✦' : `can open their next pack in ${fmtShort(theirs.next - Date.now())}`}</p>` : ''}
       <div id="reveal"></div>
     </section>`;
 
   clearInterval(state.timer);
-  if (!ready) {
+  if (mine.next) {
     state.timer = setInterval(() => {
-      const left = nextPackAt(state.me) - Date.now();
+      const left = mine.next - Date.now();
       const el = document.getElementById('countdown');
       if (!el) return clearInterval(state.timer);
       if (left <= 0) { clearInterval(state.timer); renderBooster(); return; }
@@ -339,7 +349,7 @@ async function openPack(packBtn, bought = false) {
   if (error) {
     packBtn.classList.remove('shake');
     const m = /COOLDOWN:(\S+)/.exec(error.message);
-    if (m) { state.me.last_pack_at = new Date(new Date(m[1]).getTime() - cooldownMs()).toISOString(); renderBooster(); return; }
+    if (m) { state.me.pack_clock = new Date(new Date(m[1]).getTime() - cooldownMs()).toISOString(); renderBooster(); return; }
     toast(/Aucune carte/.test(error.message) ? 'No cards yet: add some photos first'
       : /NOT_ENOUGH_COINS/.test(error.message) ? 'Not enough coins yet'
       : error.message || 'Could not open the pack', 'err');
@@ -349,7 +359,7 @@ async function openPack(packBtn, bought = false) {
   }
   const earned = data.reduce((a, c) => a + Number(c.coins || 0), 0);
   if (bought) state.me.coins = Number(state.me.coins ?? 0) - packPrice();
-  else state.me.last_pack_at = new Date().toISOString();
+  else { state.me.pack_clock = new Date(packStatus(state.me).start + cooldownMs()).toISOString(); state.me.last_pack_at = new Date().toISOString(); }
   state.me.coins = Number(state.me.coins ?? 0) + earned;
   document.getElementById('coins').textContent = `${state.me.coins} ${COIN}`;
   loadAll().catch(() => {});
@@ -933,6 +943,7 @@ function renderProfil() {
           <label><span class="pill v-gold">Gold</span><small class="muted">share of Legendaries</small><span class="pct"><input name="gold_chance" type="number" inputmode="decimal" min="0" max="100" step="any" value="${Number(state.settings?.gold_chance ?? 25)}">%</span></label>
           <label>Pack price<span class="pct"><input name="pack_price" type="number" inputmode="numeric" min="1" step="1" value="${packPrice()}">${COIN}</span></label>
           <label>Time between packs<span class="pct"><input name="cooldown_hours" type="number" inputmode="decimal" min="0.1" max="72" step="any" value="${Number(state.settings?.cooldown_hours ?? COOLDOWN_HOURS)}">h</span></label>
+          <label>Free packs that stack up<span class="pct"><input name="max_stored_packs" type="number" inputmode="numeric" min="1" max="10" step="1" value="${maxPacks()}"></span></label>
         </div>
         <p class="muted small">Coins for each duplicate (×2 for Holo and Gold):</p>
         <div class="rates-grid">
@@ -986,7 +997,7 @@ function renderProfil() {
     if (Math.round(rateSum() * 100) / 100 !== 100) return toast('The rarity rates must add up to 100%', 'err');
     const patch = { updated_at: new Date().toISOString() };
     for (const k of [...RARITIES.map((r) => `rate_${r.id}`), 'holo_chance', 'gold_chance', 'cooldown_hours']) patch[k] = Number(ratesForm[k].value);
-    for (const k of ['pack_price', 'blocks_coins_per_line', 'games_daily_cap', ...RARITIES.map((r) => `coins_${r.id}`)]) patch[k] = Math.round(Number(ratesForm[k].value));
+    for (const k of ['pack_price', 'max_stored_packs', 'blocks_coins_per_line', 'games_daily_cap', ...RARITIES.map((r) => `coins_${r.id}`)]) patch[k] = Math.round(Number(ratesForm[k].value));
     const { data, error } = await sb.from('game_settings').update(patch).eq('id', 1).select().maybeSingle();
     if (error) return toast(error.message, 'err');
     if (data) state.settings = data;

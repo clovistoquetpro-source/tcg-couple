@@ -1,12 +1,12 @@
 # Nos Cartes
 
-Un petit jeu de cartes à collectionner privé, avec nos photos (interface en anglais). Un pack de 5 cartes toutes les 2 heures, 5 raretés, une collection chacun.
+Un petit jeu de cartes à collectionner privé, avec nos photos (interface en anglais). Un pack de 5 cartes toutes les 2 heures (jusqu'à 2 packs gardés en réserve), 5 raretés, une collection chacun.
 
 ## Comment ça marche
 
 - **Site statique** (HTML, CSS, JS, sans étape de build), hébergé gratuitement sur Vercel.
 - **Supabase** (version gratuite) pour les comptes, les photos (bucket privé `cards`) et les collections.
-- Le pack est tiré côté serveur par la fonction `open_pack()` : impossible de tricher sur l'attente.
+- Le pack est tiré côté serveur par la fonction `open_pack()` : impossible de tricher sur l'attente. `profiles.pack_clock` compte les packs en réserve, jusqu'à `game_settings.max_stored_packs`.
 - Les taux de drop, les chances Holo/Gold et l'attente sont dans la table `game_settings` et se modifient dans l'onglet Profile de l'app. L'écran « Drop rates » les affiche.
 - Seuls les comptes listés dans la table `allowed_emails` peuvent exister et voir quoi que ce soit.
 - On se connecte avec un **pseudo** (il devient `pseudo@tcg-couple.app` dans Supabase, aucun email n'est envoyé).

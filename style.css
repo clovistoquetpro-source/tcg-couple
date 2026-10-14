@@ -299,6 +299,19 @@ input:focus, select:focus { outline: 2px solid var(--rose); outline-offset: 1px;
 @keyframes shine { 60%, 100% { transform: translateX(120%); } }
 .pack.ready { animation: float 3s ease-in-out infinite; }
 @keyframes float { 50% { transform: translateY(-8px) rotate(-1deg); } }
+/* plusieurs packs en réserve : un deuxième pack dépasse derrière, avec le nombre */
+.pack.stacked::before {
+  content: ""; position: absolute; top: 13%; bottom: 0; left: 0; right: 0; z-index: -1;
+  border-radius: 4px 4px 14px 14px; border: 1px solid rgba(255,255,255,.2);
+  background: linear-gradient(160deg, #e07aa0 0%, #a83a6e 45%, #4a1445 100%);
+  transform: rotate(7deg) translate(14px, 6px); transform-origin: bottom center;
+}
+.pack-count {
+  position: absolute; top: 6%; right: -12px; z-index: 3;
+  padding: 4px 11px; border-radius: 999px; background: var(--gold); color: #2a1a05;
+  font-family: var(--font-title); font-weight: 900; font-size: 1.15rem; box-shadow: 0 4px 14px rgba(0,0,0,.4);
+}
+.pack.torn .pack-count { opacity: 0; transition: opacity .3s; }
 .pack-emblem { font-size: 3.6rem; line-height: 1; text-shadow: 0 0 24px rgba(255,255,255,.7); }
 .pack-name { font-family: var(--font-title); font-weight: 900; font-size: 1.7rem; letter-spacing: .01em; }
 .pack-sub { font-size: .8rem; letter-spacing: .2em; text-transform: uppercase; opacity: .85; }
