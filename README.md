@@ -36,7 +36,7 @@ Chaque doublon rapporte des pièces (Commune 5, Peu commune 10, Rare 25, Épique
 
 ## Jeux (onglet Play)
 
-- **Blocks** : on glisse des formes sur une grille 8×8, chaque ligne ou colonne pleine disparaît. Chaque ligne rapporte 3 pièces (`blocks_lines()`), avec un plafond de 60 pièces par jour partagé entre les jeux. La partie est gardée dans le téléphone si on quitte la page.
+- **Blocks** : on glisse des formes sur une grille 8×8, chaque ligne ou colonne pleine disparaît. Chaque ligne rapporte 3 pièces (`blocks_lines()`), jusqu'à 300 pièces par jour. La partie est gardée dans le téléphone si on quitte la page.
 - **Memory** : 6 paires de vos cartes. La première partie du jour rapporte jusqu'à 50 pièces selon le nombre de coups (`claim_memory()`).
 
 Le gain par ligne et le plafond du jour se règlent dans Profile → Game settings.
