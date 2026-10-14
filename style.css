@@ -429,3 +429,14 @@ input:focus, select:focus { outline: 2px solid var(--rose); outline-offset: 1px;
 .pct input { padding: 8px 10px; }
 .total { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; }
 .total.bad { color: #ff8fa7; }
+
+/* ---------- pièces ---------- */
+.coins {
+  margin: 0; padding: 6px 12px; border-radius: 99px; font-weight: 700; font-variant-numeric: tabular-nums;
+  background: var(--surface); border: 1px solid var(--line); color: var(--gold);
+}
+.shop { margin-top: 16px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.shop p { margin: 0; }
+.btn.buy { border-color: color-mix(in srgb, var(--gold) 50%, var(--line)); color: var(--gold); }
+.btn.buy:disabled { color: var(--muted); border-color: var(--line); }
+.new.coin { background: var(--gold); color: #2a1a05; text-transform: none; letter-spacing: 0; }

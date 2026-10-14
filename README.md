@@ -30,6 +30,10 @@ La 5e carte de chaque booster est au moins peu commune.
 
 Chaque version se collectionne à part.
 
+## Pièces
+
+Chaque doublon rapporte des pièces (Commune 5, Peu commune 10, Rare 25, Épique 60, Légendaire 150, ×2 en Holo ou Gold). Un pack s'achète 150 pièces avec `buy_pack()`, sans attendre. Les valeurs se règlent dans Profile → Game settings.
+
 ## Mettre en ligne sur Vercel
 
 1. Aller sur https://vercel.com/new et se connecter avec GitHub.

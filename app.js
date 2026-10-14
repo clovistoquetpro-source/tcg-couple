@@ -89,6 +89,10 @@ function fmtPct(p) {
   return `${v.toLocaleString('en-US', { maximumFractionDigits: v < 1 ? 2 : 1 })}%`;
 }
 
+const COIN = '🪙';
+const packPrice = () => Number(state.settings?.pack_price ?? 150);
+const coinValue = (rarity) => Number(state.settings?.[`coins_${rarity}`] ?? 0);
+
 function showRatesModal() {
   const { slot, last, special } = dropRates();
   const count = (r) => state.cards.filter((c) => c.rarity === r).length;
@@ -105,7 +109,9 @@ function showRatesModal() {
         <thead><tr><th>Rarity</th><th>Per card</th><th>At least 1 per pack</th><th>Cards</th></tr></thead>
         <tbody>${rows}${specialRows}</tbody>
       </table>
-      <p class="muted small">Each pack has 5 cards. The 5th card is always Uncommon or better. A new pack every ${Number(state.settings?.cooldown_hours ?? COOLDOWN_HOURS)} h. Tap any card to see its own drop chance.</p>
+      <p class="muted small">Each pack has 5 cards. The 5th card is always Uncommon or better. A free pack every ${Number(state.settings?.cooldown_hours ?? COOLDOWN_HOURS)} h. Tap any card to see its own drop chance.</p>
+      <h2>Coins</h2>
+      <p class="muted small">Every duplicate gives coins: ${RARITIES.map((r) => `${r.label} ${coinValue(r.id)}`).join(', ')}. Holo and Gold duplicates give twice as much. A pack costs ${packPrice()} ${COIN}.</p>
       <button class="btn ghost" data-close>Close</button>
     </div>`;
   document.body.appendChild(m);
@@ -157,7 +163,7 @@ function cardHTML(card, url, opts = {}) {
     <div class="card r-${r.id}${v ? ` v-${v}` : ''}${opts.big ? ' big' : ''}" data-id="${card.id}">
       <div class="card-face">
         <div class="card-head"><span class="card-title">${esc(card.title)}</span>${opts.count > 1 ? `<span class="count">×${opts.count}</span>` : ''}</div>
-        <div class="card-art">${art}${v ? `<span class="vbadge">${VARIANTS[v]}</span>` : ''}${opts.isNew ? '<span class="new">New</span>' : ''}</div>
+        <div class="card-art">${art}${v ? `<span class="vbadge">${VARIANTS[v]}</span>` : ''}${opts.isNew ? '<span class="new">New</span>' : opts.coins ? `<span class="new coin">+${opts.coins} ${COIN}</span>` : ''}</div>
         ${card.description ? `<div class="card-desc">${esc(card.description)}</div>` : ''}
         <div class="card-foot"><span class="stars">${'★'.repeat(r.stars)}</span><span>${r.label}</span><span class="num">${cardNumber(card)}</span></div>
       </div>
@@ -277,7 +283,7 @@ async function renderBooster() {
     <section class="booster-page">
       <header class="page-head">
         <h1>Pack</h1>
-        <p class="muted">${state.cards.length} cards to collect</p>
+        <p class="coins" id="coins" title="Your coins">${Number(state.me.coins ?? 0)} ${COIN}</p>
       </header>
       <div class="pack-zone">
         <button class="pack${ready ? ' ready' : ''}" id="pack" ${ready ? '' : 'disabled'} aria-label="Open the pack">
@@ -292,6 +298,10 @@ async function renderBooster() {
           ${ready
             ? `<p class="big">Your pack is ready</p><p class="muted">Tap it to open</p>`
             : `<p class="muted">Next pack in</p><p class="countdown" id="countdown">${fmtDuration(next - Date.now())}</p>`}
+          <div class="shop">
+            <button class="btn buy" id="buy-btn" type="button" ${Number(state.me.coins ?? 0) >= packPrice() ? '' : 'disabled'}>Buy a pack · ${packPrice()} ${COIN}</button>
+            ${Number(state.me.coins ?? 0) >= packPrice() ? '' : `<p class="muted small">${packPrice() - Number(state.me.coins ?? 0)} ${COIN} to go. Duplicates give coins.</p>`}
+          </div>
           <button class="link-btn" id="rates-btn" type="button">Drop rates</button>
         </div>
       </div>
@@ -313,20 +323,34 @@ async function renderBooster() {
   document.getElementById('rates-btn').addEventListener('click', showRatesModal);
   const packBtn = document.getElementById('pack');
   if (ready) packBtn.addEventListener('click', () => openPack(packBtn), { once: true });
+  document.getElementById('buy-btn').addEventListener('click', () => {
+    if (!confirm(`Buy a pack for ${packPrice()} coins?`)) return;
+    packBtn.disabled = true;
+    packBtn.classList.add('ready');
+    openPack(packBtn, true);
+  }, { once: true });
 }
 
-async function openPack(packBtn) {
+async function openPack(packBtn, bought = false) {
   packBtn.classList.add('shake');
-  const { data, error } = await sb.rpc('open_pack');
+  document.getElementById('buy-btn').disabled = true;
+  const { data, error } = await sb.rpc(bought ? 'buy_pack' : 'open_pack');
   if (error) {
     packBtn.classList.remove('shake');
     const m = /COOLDOWN:(\S+)/.exec(error.message);
     if (m) { state.me.last_pack_at = new Date(new Date(m[1]).getTime() - cooldownMs()).toISOString(); renderBooster(); return; }
-    toast(/Aucune carte/.test(error.message) ? 'No cards yet: add some photos first' : error.message || 'Could not open the pack', 'err');
+    toast(/Aucune carte/.test(error.message) ? 'No cards yet: add some photos first'
+      : /NOT_ENOUGH_COINS/.test(error.message) ? 'Not enough coins yet'
+      : error.message || 'Could not open the pack', 'err');
+    await loadAll().catch(() => {});
     renderBooster();
     return;
   }
-  state.me.last_pack_at = new Date().toISOString();
+  const earned = data.reduce((a, c) => a + Number(c.coins || 0), 0);
+  if (bought) state.me.coins = Number(state.me.coins ?? 0) - packPrice();
+  else state.me.last_pack_at = new Date().toISOString();
+  state.me.coins = Number(state.me.coins ?? 0) + earned;
+  document.getElementById('coins').textContent = `${state.me.coins} ${COIN}`;
   loadAll().catch(() => {});
 
   const url = await signedUrls(data.map((c) => c.image_path));
@@ -347,23 +371,27 @@ async function openPack(packBtn) {
         <div class="flip" style="--d:${i * 90}ms" data-rarity="${c.rarity}" data-variant="${c.variant || 'normal'}" tabindex="0" role="button" aria-label="Flip the card">
           <div class="flip-inner">
             <div class="flip-back">${backHTML()}</div>
-            <div class="flip-front">${cardHTML(c, url, { isNew: c.is_new, variant: c.variant })}</div>
+            <div class="flip-front">${cardHTML(c, url, { isNew: c.is_new, variant: c.variant, coins: c.coins })}</div>
           </div>
         </div>`).join('')}
     </div>
     <div class="reveal-actions">
       <button class="btn ghost" id="flip-all">Flip all</button>
+      <button class="btn ghost" id="back-to-packs" hidden>Back</button>
       <a class="btn primary" href="#/collection" id="to-collection" hidden>See my collection</a>
     </div>`;
+  document.getElementById('back-to-packs').addEventListener('click', () => renderBooster());
 
   const flips = [...reveal.querySelectorAll('.flip')];
   const done = () => {
     if (flips.every((f) => f.classList.contains('flipped'))) {
       document.getElementById('flip-all').hidden = true;
       document.getElementById('to-collection').hidden = false;
+      document.getElementById('back-to-packs').hidden = false;
       const news = pulled.filter((c) => c.is_new).length;
       const special = pulled.find((c) => c.variant === 'gold') || pulled.find((c) => c.variant === 'holo');
-      toast(special ? `A ${VARIANTS[special.variant]} card!` : news ? `${news} new card${news > 1 ? 's' : ''}!` : 'Only duplicates this time');
+      const coins = earned ? ` +${earned} ${COIN}` : '';
+      toast(special ? `A ${VARIANTS[special.variant]} card!${coins}` : news ? `${news} new card${news > 1 ? 's' : ''}!${coins}` : `Only duplicates ·${coins}`);
     }
   };
   const flip = (f) => {
@@ -583,7 +611,12 @@ function renderProfil() {
         <div class="rates-grid">
           <label><span class="pill v-holo">Holo</span><small class="muted">share of Epics</small><span class="pct"><input name="holo_chance" type="number" inputmode="decimal" min="0" max="100" step="any" value="${Number(state.settings?.holo_chance ?? 25)}">%</span></label>
           <label><span class="pill v-gold">Gold</span><small class="muted">share of Legendaries</small><span class="pct"><input name="gold_chance" type="number" inputmode="decimal" min="0" max="100" step="any" value="${Number(state.settings?.gold_chance ?? 25)}">%</span></label>
+          <label>Pack price<span class="pct"><input name="pack_price" type="number" inputmode="numeric" min="1" step="1" value="${packPrice()}">${COIN}</span></label>
           <label>Time between packs<span class="pct"><input name="cooldown_hours" type="number" inputmode="decimal" min="0.1" max="72" step="any" value="${Number(state.settings?.cooldown_hours ?? COOLDOWN_HOURS)}">h</span></label>
+        </div>
+        <p class="muted small">Coins for each duplicate (×2 for Holo and Gold):</p>
+        <div class="rates-grid">
+          ${RARITIES.map((r) => `<label><span class="pill r-${r.id}">${r.label}</span><span class="pct"><input name="coins_${r.id}" type="number" inputmode="numeric" min="0" step="1" value="${coinValue(r.id)}">${COIN}</span></label>`).join('')}
         </div>
         <button class="btn" type="submit">Save settings</button>
       </form>
@@ -629,6 +662,7 @@ function renderProfil() {
     if (Math.round(rateSum() * 100) / 100 !== 100) return toast('The rarity rates must add up to 100%', 'err');
     const patch = { updated_at: new Date().toISOString() };
     for (const k of [...RARITIES.map((r) => `rate_${r.id}`), 'holo_chance', 'gold_chance', 'cooldown_hours']) patch[k] = Number(ratesForm[k].value);
+    for (const k of ['pack_price', ...RARITIES.map((r) => `coins_${r.id}`)]) patch[k] = Math.round(Number(ratesForm[k].value));
     const { data, error } = await sb.from('game_settings').update(patch).eq('id', 1).select().maybeSingle();
     if (error) return toast(error.message, 'err');
     if (data) state.settings = data;
