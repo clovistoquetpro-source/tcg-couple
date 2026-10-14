@@ -4,7 +4,7 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: { persistSession: true, autoRefreshToken: true },
 });
 
-const COOLDOWN_MS = COOLDOWN_HOURS * 3600 * 1000;
+const cooldownMs = () => Number(state.settings?.cooldown_hours ?? COOLDOWN_HOURS) * 3600 * 1000;
 const BUCKET = 'cards';
 
 const RARITIES = [
@@ -56,7 +56,63 @@ function fmtDuration(ms) {
 
 function nextPackAt(profile) {
   if (!profile?.last_pack_at) return 0;
-  return new Date(profile.last_pack_at).getTime() + COOLDOWN_MS;
+  return new Date(profile.last_pack_at).getTime() + cooldownMs();
+}
+
+/* ---------- taux de drop (lus dans game_settings, les mêmes que ceux du serveur) ---------- */
+
+function dropRates() {
+  const s = state.settings || {};
+  const w = Object.fromEntries(RARITIES.map((r) => [r.id, Number(s[`rate_${r.id}`] ?? 0)]));
+  const total = Object.values(w).reduce((a, b) => a + b, 0) || 1;
+  const slot = Object.fromEntries(RARITIES.map((r) => [r.id, w[r.id] / total]));
+  // la 5e carte est au moins peu commune
+  const last = { ...slot, peu_commune: slot.peu_commune + slot.commune, commune: 0 };
+  const special = { holo: Number(s.holo_chance ?? 0) / 100, gold: Number(s.gold_chance ?? 0) / 100 };
+  return { slot, last, special };
+}
+
+// chance d'avoir au moins une fois l'événement dans un pack, avec p par carte (4 premières) et pLast (5e)
+const perPack = (p, pLast) => 1 - (1 - p) ** 4 * (1 - pLast);
+
+function cardChance(card, variant = 'normal') {
+  const { slot, last, special } = dropRates();
+  const n = state.cards.filter((c) => c.rarity === card.rarity).length || 1;
+  let k = 1 / n;
+  if (SPECIAL[card.rarity]) k *= variant === 'normal' ? 1 - special[SPECIAL[card.rarity]] : special[variant];
+  return perPack(slot[card.rarity] * k, last[card.rarity] * k);
+}
+
+function fmtPct(p) {
+  const v = p * 100;
+  if (v === 0) return '0%';
+  return `${v.toLocaleString('en-US', { maximumFractionDigits: v < 1 ? 2 : 1 })}%`;
+}
+
+function showRatesModal() {
+  const { slot, last, special } = dropRates();
+  const count = (r) => state.cards.filter((c) => c.rarity === r).length;
+  const rows = RARITIES.map((r) => `
+    <tr><td><span class="pill r-${r.id}">${r.label}</span></td><td>${fmtPct(slot[r.id])}</td><td>${fmtPct(perPack(slot[r.id], last[r.id]))}</td><td>${count(r.id)}</td></tr>`).join('');
+  const specialRows = Object.entries(SPECIAL).map(([r, v]) => `
+    <tr><td><span class="pill v-${v}">${VARIANTS[v]}</span></td><td>${fmtPct(slot[r] * special[v])}</td><td>${fmtPct(perPack(slot[r] * special[v], last[r] * special[v]))}</td><td class="muted">${fmtPct(special[v])} of ${{ epique: 'epics', legendaire: 'legendaries' }[r]}</td></tr>`).join('');
+  const m = document.createElement('div');
+  m.className = 'modal';
+  m.innerHTML = `
+    <div class="modal-inner wide panel">
+      <h2>Drop rates</h2>
+      <table class="rates">
+        <thead><tr><th>Rarity</th><th>Per card</th><th>At least 1 per pack</th><th>Cards</th></tr></thead>
+        <tbody>${rows}${specialRows}</tbody>
+      </table>
+      <p class="muted small">Each pack has 5 cards. The 5th card is always Uncommon or better. A new pack every ${Number(state.settings?.cooldown_hours ?? COOLDOWN_HOURS)} h. Tap any card to see its own drop chance.</p>
+      <button class="btn ghost" data-close>Close</button>
+    </div>`;
+  document.body.appendChild(m);
+  requestAnimationFrame(() => m.classList.add('open'));
+  m.addEventListener('click', (e) => {
+    if (e.target === m || e.target.closest('[data-close]')) { m.classList.remove('open'); setTimeout(() => m.remove(), 250); }
+  });
 }
 
 function firstEmoji(s) {
@@ -135,11 +191,13 @@ async function showCardModal(card, { variant = 'normal', extra = '', owned = nul
   const versions = owned && variantsFor(card.rarity).length > 1
     ? `<div class="seg versions">${variantsFor(card.rarity).map((v) => `<button data-variant="${v}" aria-selected="${v === variant}" ${owned.variants[v] ? '' : 'disabled'}>${VARIANTS[v]} ${owned.variants[v] ? `×${owned.variants[v]}` : '🔒'}</button>`).join('')}</div>`
     : '';
-  m.innerHTML = `<div class="modal-inner"><div class="modal-card">${cardHTML(card, url, { big: true, variant })}</div>${versions}<div class="modal-extra">${extra}</div><button class="btn ghost" data-close>Close</button></div>`;
+  const chance = (v) => `Drop chance${v !== 'normal' ? ` (${VARIANTS[v]})` : ''}: ${fmtPct(cardChance(card, v))} per pack`;
+  m.innerHTML = `<div class="modal-inner"><div class="modal-card">${cardHTML(card, url, { big: true, variant })}</div>${versions}<div class="modal-extra">${extra}<p class="muted small" id="chance">${chance(variant)}</p></div><button class="btn ghost" data-close>Close</button></div>`;
   document.body.appendChild(m);
   attachTilt(m.querySelector('.card'));
   m.querySelectorAll('[data-variant]').forEach((b) => b.addEventListener('click', () => {
     m.querySelectorAll('[data-variant]').forEach((x) => x.setAttribute('aria-selected', x === b));
+    m.querySelector('#chance').textContent = chance(b.dataset.variant);
     m.querySelector('.modal-card').innerHTML = cardHTML(card, url, { big: true, variant: b.dataset.variant });
     attachTilt(m.querySelector('.card'));
   }));
@@ -152,12 +210,14 @@ async function showCardModal(card, { variant = 'normal', extra = '', owned = nul
 /* ---------- données ---------- */
 
 async function loadAll() {
-  const [p, c, o] = await Promise.all([
+  const [p, c, o, g] = await Promise.all([
     sb.from('profiles').select('*').order('created_at'),
     sb.from('cards').select('*').order('id'),
     sb.from('user_cards').select('*'),
+    sb.from('game_settings').select('*').eq('id', 1).maybeSingle(),
   ]);
   if (p.error || c.error || o.error) throw p.error || c.error || o.error;
+  if (g.data) state.settings = g.data;
   state.profiles = p.data;
   state.me = p.data.find((x) => x.id === state.session.user.id) || { id: state.session.user.id, display_name: '', last_pack_at: null };
   state.cards = c.data.sort((a, b) => RARITY[a.rarity].rank - RARITY[b.rarity].rank || a.id - b.id);
@@ -232,6 +292,7 @@ async function renderBooster() {
           ${ready
             ? `<p class="big">Your pack is ready</p><p class="muted">Tap it to open</p>`
             : `<p class="muted">Next pack in</p><p class="countdown" id="countdown">${fmtDuration(next - Date.now())}</p>`}
+          <button class="link-btn" id="rates-btn" type="button">Drop rates</button>
         </div>
       </div>
       ${other ? `<p class="partner muted">${esc(other.display_name || 'Your partner')} ${otherReady ? 'has a pack waiting ✦' : `can open their next pack in ${fmtDuration(nextPackAt(other) - Date.now()).slice(0, 5).replace(':', 'h ')}m`}</p>` : ''}
@@ -249,6 +310,7 @@ async function renderBooster() {
     }, 1000);
   }
 
+  document.getElementById('rates-btn').addEventListener('click', showRatesModal);
   const packBtn = document.getElementById('pack');
   if (ready) packBtn.addEventListener('click', () => openPack(packBtn), { once: true });
 }
@@ -259,7 +321,7 @@ async function openPack(packBtn) {
   if (error) {
     packBtn.classList.remove('shake');
     const m = /COOLDOWN:(\S+)/.exec(error.message);
-    if (m) { state.me.last_pack_at = new Date(new Date(m[1]).getTime() - COOLDOWN_MS).toISOString(); renderBooster(); return; }
+    if (m) { state.me.last_pack_at = new Date(new Date(m[1]).getTime() - cooldownMs()).toISOString(); renderBooster(); return; }
     toast(/Aucune carte/.test(error.message) ? 'No cards yet: add some photos first' : error.message || 'Could not open the pack', 'err');
     renderBooster();
     return;
@@ -511,6 +573,20 @@ function renderProfil() {
         <label>My display name<input name="name" value="${esc(state.me.display_name)}" maxlength="30"></label>
         <button class="btn" type="submit">Save</button>
       </form>
+      <form id="rates-form" class="panel stack">
+        <h2>Game settings</h2>
+        <p class="muted small">Chance for each card of a pack to be of this rarity. The total must be 100%.</p>
+        <div class="rates-grid">
+          ${RARITIES.map((r) => `<label><span class="pill r-${r.id}">${r.label}</span><span class="pct"><input name="rate_${r.id}" type="number" inputmode="decimal" min="0" max="100" step="any" value="${Number(state.settings?.[`rate_${r.id}`] ?? 0)}">%</span></label>`).join('')}
+        </div>
+        <p class="total" id="rates-total"></p>
+        <div class="rates-grid">
+          <label><span class="pill v-holo">Holo</span><small class="muted">share of Epics</small><span class="pct"><input name="holo_chance" type="number" inputmode="decimal" min="0" max="100" step="any" value="${Number(state.settings?.holo_chance ?? 25)}">%</span></label>
+          <label><span class="pill v-gold">Gold</span><small class="muted">share of Legendaries</small><span class="pct"><input name="gold_chance" type="number" inputmode="decimal" min="0" max="100" step="any" value="${Number(state.settings?.gold_chance ?? 25)}">%</span></label>
+          <label>Time between packs<span class="pct"><input name="cooldown_hours" type="number" inputmode="decimal" min="0.1" max="72" step="any" value="${Number(state.settings?.cooldown_hours ?? COOLDOWN_HOURS)}">h</span></label>
+        </div>
+        <button class="btn" type="submit">Save settings</button>
+      </form>
       <form id="pw-form" class="panel stack">
         <label>New password<input name="pw" type="password" minlength="8" autocomplete="new-password" required></label>
         <button class="btn" type="submit">Change password</button>
@@ -537,6 +613,27 @@ function renderProfil() {
     toast('Password changed');
   });
   document.getElementById('logout').addEventListener('click', () => sb.auth.signOut());
+
+  const ratesForm = document.getElementById('rates-form');
+  const totalEl = document.getElementById('rates-total');
+  const rateSum = () => RARITIES.reduce((a, r) => a + Number(ratesForm[`rate_${r.id}`].value || 0), 0);
+  const showTotal = () => {
+    const t = Math.round(rateSum() * 100) / 100;
+    totalEl.textContent = `Total: ${t}%`;
+    totalEl.classList.toggle('bad', t !== 100);
+  };
+  showTotal();
+  ratesForm.addEventListener('input', showTotal);
+  ratesForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (Math.round(rateSum() * 100) / 100 !== 100) return toast('The rarity rates must add up to 100%', 'err');
+    const patch = { updated_at: new Date().toISOString() };
+    for (const k of [...RARITIES.map((r) => `rate_${r.id}`), 'holo_chance', 'gold_chance', 'cooldown_hours']) patch[k] = Number(ratesForm[k].value);
+    const { data, error } = await sb.from('game_settings').update(patch).eq('id', 1).select().maybeSingle();
+    if (error) return toast(error.message, 'err');
+    if (data) state.settings = data;
+    toast('Settings saved');
+  });
 }
 
 /* ---------- routeur ---------- */

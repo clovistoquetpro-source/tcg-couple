@@ -406,3 +406,26 @@ input:focus, select:focus { outline: 2px solid var(--rose); outline-offset: 1px;
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+/* ---------- taux de drop ---------- */
+.small { font-size: .85rem; }
+.link-btn {
+  margin-top: 10px; background: none; border: 0; color: var(--rose2); font-weight: 500; cursor: pointer;
+  text-decoration: underline; text-underline-offset: 3px; padding: 6px;
+}
+.modal-inner.wide { width: min(520px, 94vw); align-items: stretch; max-height: 90dvh; overflow: auto; }
+.modal-inner.wide h2 { margin: 0; }
+.modal-inner.wide .btn { align-self: center; }
+.rates { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: .9rem; }
+.rates th { text-align: left; color: var(--muted); font-weight: 500; font-size: .78rem; padding: 0 6px 8px; }
+.rates td { padding: 7px 6px; border-top: 1px solid var(--line); }
+.rates td:nth-child(2), .rates td:nth-child(3), .rates th:nth-child(2), .rates th:nth-child(3) { text-align: right; }
+.rates td:last-child, .rates th:last-child { text-align: right; }
+.rates .pill { white-space: nowrap; }
+.rates-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.rates-grid label { background: var(--bg2); border: 1px solid var(--line); border-radius: 12px; padding: 10px; gap: 8px; }
+.rates-grid .pill { align-self: flex-start; }
+.pct { display: flex; align-items: center; gap: 6px; color: var(--text); }
+.pct input { padding: 8px 10px; }
+.total { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; }
+.total.bad { color: #ff8fa7; }
