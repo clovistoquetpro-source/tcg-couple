@@ -8,16 +8,16 @@ const COOLDOWN_MS = COOLDOWN_HOURS * 3600 * 1000;
 const BUCKET = 'cards';
 
 const RARITIES = [
-  { id: 'commune', label: 'Commune', stars: 1 },
-  { id: 'peu_commune', label: 'Peu commune', stars: 2 },
+  { id: 'commune', label: 'Common', stars: 1 },
+  { id: 'peu_commune', label: 'Uncommon', stars: 2 },
   { id: 'rare', label: 'Rare', stars: 3 },
-  { id: 'epique', label: 'Épique', stars: 4 },
-  { id: 'legendaire', label: 'Légendaire', stars: 5 },
+  { id: 'epique', label: 'Epic', stars: 4 },
+  { id: 'legendaire', label: 'Legendary', stars: 5 },
 ];
 const RARITY = Object.fromEntries(RARITIES.map((r, i) => [r.id, { ...r, rank: i }]));
 
 // Versions spéciales : Holo pour les épiques, Gold pour les légendaires
-const VARIANTS = { normal: 'Normale', holo: 'Holo', gold: 'Gold' };
+const VARIANTS = { normal: 'Normal', holo: 'Holo', gold: 'Gold' };
 const SPECIAL = { epique: 'holo', legendaire: 'gold' };
 const variantsFor = (rarity) => (SPECIAL[rarity] ? ['normal', SPECIAL[rarity]] : ['normal']);
 const bestVariant = (entry) => (entry.variants.gold ? 'gold' : entry.variants.holo ? 'holo' : 'normal');
@@ -101,7 +101,7 @@ function cardHTML(card, url, opts = {}) {
     <div class="card r-${r.id}${v ? ` v-${v}` : ''}${opts.big ? ' big' : ''}" data-id="${card.id}">
       <div class="card-face">
         <div class="card-head"><span class="card-title">${esc(card.title)}</span>${opts.count > 1 ? `<span class="count">×${opts.count}</span>` : ''}</div>
-        <div class="card-art">${art}${v ? `<span class="vbadge">${VARIANTS[v]}</span>` : ''}${opts.isNew ? '<span class="new">Nouveau</span>' : ''}</div>
+        <div class="card-art">${art}${v ? `<span class="vbadge">${VARIANTS[v]}</span>` : ''}${opts.isNew ? '<span class="new">New</span>' : ''}</div>
         ${card.description ? `<div class="card-desc">${esc(card.description)}</div>` : ''}
         <div class="card-foot"><span class="stars">${'★'.repeat(r.stars)}</span><span>${r.label}</span><span class="num">${cardNumber(card)}</span></div>
       </div>
@@ -110,7 +110,7 @@ function cardHTML(card, url, opts = {}) {
 }
 
 function lockedCardHTML(card) {
-  return `<div class="card locked r-${card.rarity}" aria-label="Carte pas encore obtenue"><div class="card-face"><div class="q">?</div><div class="card-foot"><span class="stars">${'★'.repeat(RARITY[card.rarity].stars)}</span></div></div></div>`;
+  return `<div class="card locked r-${card.rarity}" aria-label="Card not collected yet"><div class="card-face"><div class="q">?</div><div class="card-foot"><span class="stars">${'★'.repeat(RARITY[card.rarity].stars)}</span></div></div></div>`;
 }
 
 function attachTilt(el) {
@@ -135,7 +135,7 @@ async function showCardModal(card, { variant = 'normal', extra = '', owned = nul
   const versions = owned && variantsFor(card.rarity).length > 1
     ? `<div class="seg versions">${variantsFor(card.rarity).map((v) => `<button data-variant="${v}" aria-selected="${v === variant}" ${owned.variants[v] ? '' : 'disabled'}>${VARIANTS[v]} ${owned.variants[v] ? `×${owned.variants[v]}` : '🔒'}</button>`).join('')}</div>`
     : '';
-  m.innerHTML = `<div class="modal-inner"><div class="modal-card">${cardHTML(card, url, { big: true, variant })}</div>${versions}<div class="modal-extra">${extra}</div><button class="btn ghost" data-close>Fermer</button></div>`;
+  m.innerHTML = `<div class="modal-inner"><div class="modal-card">${cardHTML(card, url, { big: true, variant })}</div>${versions}<div class="modal-extra">${extra}</div><button class="btn ghost" data-close>Close</button></div>`;
   document.body.appendChild(m);
   attachTilt(m.querySelector('.card'));
   m.querySelectorAll('[data-variant]').forEach((b) => b.addEventListener('click', () => {
@@ -183,12 +183,12 @@ function renderLogin() {
   $app.innerHTML = `
     <section class="login">
       <div class="logo">${backHTML()}</div>
-      <h1>Nos Cartes</h1>
-      <p class="muted">Notre collection, rien qu'à nous.</p>
+      <h1>Our Cards</h1>
+      <p class="muted">Our collection, just for the two of us.</p>
       <form id="login-form" class="stack">
-        <label>Pseudo<input name="pseudo" autocomplete="username" autocapitalize="none" required></label>
-        <label>Mot de passe<input name="password" type="password" autocomplete="current-password" required></label>
-        <button class="btn primary" type="submit">Se connecter</button>
+        <label>Username<input name="pseudo" autocomplete="username" autocapitalize="none" required></label>
+        <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
+        <button class="btn primary" type="submit">Sign in</button>
       </form>
     </section>`;
   document.getElementById('login-form').addEventListener('submit', async (e) => {
@@ -199,7 +199,7 @@ function renderLogin() {
     const email = `${String(f.get('pseudo')).trim().toLowerCase()}@${LOGIN_DOMAIN}`;
     const { error } = await sb.auth.signInWithPassword({ email, password: f.get('password') });
     btn.disabled = false;
-    if (error) toast('Pseudo ou mot de passe incorrect', 'err');
+    if (error) toast('Wrong username or password', 'err');
   });
 }
 
@@ -216,25 +216,25 @@ async function renderBooster() {
   $app.innerHTML = `
     <section class="booster-page">
       <header class="page-head">
-        <h1>Booster</h1>
-        <p class="muted">${state.cards.length} cartes à collectionner</p>
+        <h1>Pack</h1>
+        <p class="muted">${state.cards.length} cards to collect</p>
       </header>
       <div class="pack-zone">
-        <button class="pack${ready ? ' ready' : ''}" id="pack" ${ready ? '' : 'disabled'} aria-label="Ouvrir le booster">
+        <button class="pack${ready ? ' ready' : ''}" id="pack" ${ready ? '' : 'disabled'} aria-label="Open the pack">
           <span class="pack-top"></span>
           <span class="pack-body">
             <span class="pack-emblem">♥</span>
-            <span class="pack-name">Nos Cartes</span>
-            <span class="pack-sub">5 cartes</span>
+            <span class="pack-name">Our Cards</span>
+            <span class="pack-sub">5 cards</span>
           </span>
         </button>
         <div class="pack-cta">
           ${ready
-            ? `<p class="big">Ton booster est prêt</p><p class="muted">Touche-le pour l'ouvrir</p>`
-            : `<p class="muted">Prochain booster dans</p><p class="countdown" id="countdown">${fmtDuration(next - Date.now())}</p>`}
+            ? `<p class="big">Your pack is ready</p><p class="muted">Tap it to open</p>`
+            : `<p class="muted">Next pack in</p><p class="countdown" id="countdown">${fmtDuration(next - Date.now())}</p>`}
         </div>
       </div>
-      ${other ? `<p class="partner muted">${esc(other.display_name || 'Ton/ta partenaire')} ${otherReady ? 'a un booster qui l\'attend ✦' : `pourra ouvrir le sien dans ${fmtDuration(nextPackAt(other) - Date.now()).slice(0, 5).replace(':', ' h ')}`}</p>` : ''}
+      ${other ? `<p class="partner muted">${esc(other.display_name || 'Your partner')} ${otherReady ? 'has a pack waiting ✦' : `can open their next pack in ${fmtDuration(nextPackAt(other) - Date.now()).slice(0, 5).replace(':', 'h ')}m`}</p>` : ''}
       <div id="reveal"></div>
     </section>`;
 
@@ -260,7 +260,7 @@ async function openPack(packBtn) {
     packBtn.classList.remove('shake');
     const m = /COOLDOWN:(\S+)/.exec(error.message);
     if (m) { state.me.last_pack_at = new Date(new Date(m[1]).getTime() - COOLDOWN_MS).toISOString(); renderBooster(); return; }
-    toast(error.message || 'Impossible d\'ouvrir le booster', 'err');
+    toast(/Aucune carte/.test(error.message) ? 'No cards yet: add some photos first' : error.message || 'Could not open the pack', 'err');
     renderBooster();
     return;
   }
@@ -282,7 +282,7 @@ async function openPack(packBtn) {
   reveal.innerHTML = `
     <div class="reveal-grid">
       ${pulled.map((c, i) => `
-        <div class="flip" style="--d:${i * 90}ms" data-rarity="${c.rarity}" data-variant="${c.variant || 'normal'}" tabindex="0" role="button" aria-label="Retourner la carte">
+        <div class="flip" style="--d:${i * 90}ms" data-rarity="${c.rarity}" data-variant="${c.variant || 'normal'}" tabindex="0" role="button" aria-label="Flip the card">
           <div class="flip-inner">
             <div class="flip-back">${backHTML()}</div>
             <div class="flip-front">${cardHTML(c, url, { isNew: c.is_new, variant: c.variant })}</div>
@@ -290,8 +290,8 @@ async function openPack(packBtn) {
         </div>`).join('')}
     </div>
     <div class="reveal-actions">
-      <button class="btn ghost" id="flip-all">Tout retourner</button>
-      <a class="btn primary" href="#/collection" id="to-collection" hidden>Voir ma collection</a>
+      <button class="btn ghost" id="flip-all">Flip all</button>
+      <a class="btn primary" href="#/collection" id="to-collection" hidden>See my collection</a>
     </div>`;
 
   const flips = [...reveal.querySelectorAll('.flip')];
@@ -301,7 +301,7 @@ async function openPack(packBtn) {
       document.getElementById('to-collection').hidden = false;
       const news = pulled.filter((c) => c.is_new).length;
       const special = pulled.find((c) => c.variant === 'gold') || pulled.find((c) => c.variant === 'holo');
-      toast(special ? `Une carte ${VARIANTS[special.variant]} !` : news ? `${news} nouvelle${news > 1 ? 's' : ''} carte${news > 1 ? 's' : ''} !` : 'Que des doubles cette fois');
+      toast(special ? `A ${VARIANTS[special.variant]} card!` : news ? `${news} new card${news > 1 ? 's' : ''}!` : 'Only duplicates this time');
     }
   };
   const flip = (f) => {
@@ -340,13 +340,13 @@ async function renderCollection() {
       <header class="page-head">
         <h1>Collection</h1>
         <div class="seg" role="tablist">
-          ${state.profiles.map((p) => `<button role="tab" aria-selected="${p.id === viewing.id}" data-user="${p.id}">${p.id === state.me.id ? 'Moi' : esc(p.display_name || 'Partenaire')}</button>`).join('')}
+          ${state.profiles.map((p) => `<button role="tab" aria-selected="${p.id === viewing.id}" data-user="${p.id}">${p.id === state.me.id ? 'Me' : esc(p.display_name || 'Partner')}</button>`).join('')}
         </div>
       </header>
       <div class="progress"><div class="bar"><span style="width:${total ? (have / total) * 100 : 0}%"></span></div><span>${have} / ${total}</span></div>
       ${specials ? `<div class="pills">${specials}</div>` : ''}
       <div class="chips">
-        <button class="chip" aria-pressed="${state.filter === 'all'}" data-filter="all">Toutes</button>
+        <button class="chip" aria-pressed="${state.filter === 'all'}" data-filter="all">All</button>
         ${RARITIES.map((r) => {
           const n = state.cards.filter((c) => c.rarity === r.id);
           const h = n.filter((c) => owned.has(c.id)).length;
@@ -354,7 +354,7 @@ async function renderCollection() {
         }).join('')}
       </div>
       ${list.length ? `<div class="grid">${list.map((c) => owned.has(c.id) ? cardHTML(c, url, { count: owned.get(c.id).count, variant: bestVariant(owned.get(c.id)) }) : lockedCardHTML(c)).join('')}</div>`
-        : `<p class="empty muted">Aucune carte ici pour l'instant.</p>`}
+        : `<p class="empty muted">No cards here yet.</p>`}
     </section>`;
 
   $app.querySelectorAll('[data-user]').forEach((b) => b.addEventListener('click', () => { state.viewUser = b.dataset.user; renderCollection(); }));
@@ -365,7 +365,7 @@ async function renderCollection() {
     showCardModal(card, {
       variant: bestVariant(o),
       owned: o,
-      extra: `<p class="muted">Obtenue le ${new Date(o.first_pulled_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}${o.count > 1 ? ` · ${o.count} exemplaires` : ''}</p>`,
+      extra: `<p class="muted">Collected on ${new Date(o.first_pulled_at).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })}${o.count > 1 ? ` · ${o.count} copies` : ''}</p>`,
     });
   }));
 }
@@ -401,29 +401,29 @@ async function renderAjouter() {
 
   $app.innerHTML = `
     <section>
-      <header class="page-head"><h1>Ajouter des cartes</h1></header>
+      <header class="page-head"><h1>Add cards</h1></header>
       <form id="add-form" class="panel stack">
         <label class="drop">
           <input type="file" id="files" accept="image/*" multiple hidden>
           <span class="drop-ico">＋</span>
-          <span>Choisir des photos</span>
-          <small class="muted">Elles sont compressées automatiquement</small>
+          <span>Choose photos</span>
+          <small class="muted">They are compressed automatically</small>
         </label>
         <div id="pending" class="stack"></div>
-        <button class="btn primary" id="upload" type="submit" hidden>Ajouter</button>
+        <button class="btn primary" id="upload" type="submit" hidden>Add</button>
       </form>
 
-      <h2>Toutes les cartes <small class="muted">(${state.cards.length})</small></h2>
+      <h2>All cards <small class="muted">(${state.cards.length})</small></h2>
       <div class="pills">${counts}</div>
       <div class="manage">
         ${state.cards.map((c) => `
           <div class="row" data-id="${c.id}">
             <div class="thumb r-${c.rarity}">${c.image_path && url(c.image_path) ? `<img src="${esc(url(c.image_path))}" alt="" loading="lazy">` : `<span>${esc(firstEmoji(c.description))}</span>`}</div>
             <div class="row-main">
-              <input class="row-title" value="${esc(c.title)}" aria-label="Titre">
-              <select class="row-rarity" aria-label="Rareté">${rarityOptions(c.rarity)}</select>
+              <input class="row-title" value="${esc(c.title)}" aria-label="Title">
+              <select class="row-rarity" aria-label="Rarity">${rarityOptions(c.rarity)}</select>
             </div>
-            <button class="icon-btn danger" data-del aria-label="Supprimer">✕</button>
+            <button class="icon-btn danger" data-del aria-label="Delete">✕</button>
           </div>`).join('')}
       </div>
     </section>`;
@@ -439,13 +439,13 @@ async function renderAjouter() {
       <div class="pending-row" data-i="${i}">
         <img src="${it.preview}" alt="">
         <div class="stack tight">
-          <input name="title" placeholder="Titre de la carte" value="${esc(it.file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').slice(0, 40))}" required>
-          <input name="desc" placeholder="Petite description (facultatif)" maxlength="90">
+          <input name="title" placeholder="Card title" value="${esc(it.file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').slice(0, 40))}" required>
+          <input name="desc" placeholder="Short description (optional)" maxlength="90">
           <select name="rarity">${rarityOptions('commune')}</select>
         </div>
       </div>`).join('');
     uploadBtn.hidden = !items.length;
-    uploadBtn.textContent = `Ajouter ${items.length} carte${items.length > 1 ? 's' : ''}`;
+    uploadBtn.textContent = `Add ${items.length} card${items.length > 1 ? 's' : ''}`;
   });
 
   document.getElementById('add-form').addEventListener('submit', async (e) => {
@@ -454,7 +454,7 @@ async function renderAjouter() {
     let ok = 0;
     for (const [i, it] of items.entries()) {
       const row = pending.querySelector(`[data-i="${i}"]`);
-      uploadBtn.textContent = `Envoi ${i + 1} / ${items.length}…`;
+      uploadBtn.textContent = `Uploading ${i + 1} / ${items.length}…`;
       try {
         const blob = await compressImage(it.file);
         const ext = blob.type === 'image/webp' ? 'webp' : 'jpg';
@@ -462,7 +462,7 @@ async function renderAjouter() {
         const up = await sb.storage.from(BUCKET).upload(path, blob, { contentType: blob.type, cacheControl: '31536000' });
         if (up.error) throw up.error;
         const ins = await sb.from('cards').insert({
-          title: row.querySelector('[name=title]').value.trim() || 'Sans titre',
+          title: row.querySelector('[name=title]').value.trim() || 'Untitled',
           description: row.querySelector('[name=desc]').value.trim(),
           rarity: row.querySelector('[name=rarity]').value,
           image_path: path,
@@ -470,10 +470,10 @@ async function renderAjouter() {
         if (ins.error) throw ins.error;
         ok++;
       } catch (err) {
-        toast(`Erreur sur « ${it.file.name} » : ${err.message}`, 'err');
+        toast(`Error with "${it.file.name}": ${err.message}`, 'err');
       }
     }
-    toast(`${ok} carte${ok > 1 ? 's' : ''} ajoutée${ok > 1 ? 's' : ''}`);
+    toast(`${ok} card${ok > 1 ? 's' : ''} added`);
     await loadAll();
     renderAjouter();
   });
@@ -486,12 +486,12 @@ async function renderAjouter() {
       if (error) return toast(error.message, 'err');
       Object.assign(card, patch);
       row.querySelector('.thumb').className = `thumb r-${card.rarity}`;
-      toast('Enregistré');
+      toast('Saved');
     };
     row.querySelector('.row-title').addEventListener('change', (e) => save({ title: e.target.value.trim() || card.title }));
     row.querySelector('.row-rarity').addEventListener('change', (e) => save({ rarity: e.target.value }));
     row.querySelector('[data-del]').addEventListener('click', async () => {
-      if (!confirm(`Supprimer « ${card.title} » ? Elle disparaîtra aussi des collections.`)) return;
+      if (!confirm(`Delete "${card.title}"? It will also disappear from both collections.`)) return;
       const { error } = await sb.from('cards').delete().eq('id', id);
       if (error) return toast(error.message, 'err');
       if (card.image_path) await sb.storage.from(BUCKET).remove([card.image_path]);
@@ -506,20 +506,20 @@ async function renderAjouter() {
 function renderProfil() {
   $app.innerHTML = `
     <section>
-      <header class="page-head"><h1>Profil</h1></header>
+      <header class="page-head"><h1>Profile</h1></header>
       <form id="name-form" class="panel stack">
-        <label>Mon prénom affiché<input name="name" value="${esc(state.me.display_name)}" maxlength="30"></label>
-        <button class="btn" type="submit">Enregistrer</button>
+        <label>My display name<input name="name" value="${esc(state.me.display_name)}" maxlength="30"></label>
+        <button class="btn" type="submit">Save</button>
       </form>
       <form id="pw-form" class="panel stack">
-        <label>Nouveau mot de passe<input name="pw" type="password" minlength="8" autocomplete="new-password" required></label>
-        <button class="btn" type="submit">Changer le mot de passe</button>
+        <label>New password<input name="pw" type="password" minlength="8" autocomplete="new-password" required></label>
+        <button class="btn" type="submit">Change password</button>
       </form>
       <div class="panel stack">
-        <h2>Installer l'app</h2>
-        <p class="muted"><b>iPhone :</b> dans Safari, bouton Partager puis « Sur l'écran d'accueil ».<br><b>Android :</b> dans Chrome, menu ⋮ puis « Installer l'application ».</p>
+        <h2>Install the app</h2>
+        <p class="muted"><b>iPhone:</b> in Safari, tap Share then “Add to Home Screen”.<br><b>Android:</b> in Chrome, open the ⋮ menu then “Install app”.</p>
       </div>
-      <button class="btn ghost" id="logout">Se déconnecter</button>
+      <button class="btn ghost" id="logout">Sign out</button>
     </section>`;
   document.getElementById('name-form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -527,14 +527,14 @@ function renderProfil() {
     const { error } = await sb.from('profiles').update({ display_name: name }).eq('id', state.me.id);
     if (error) return toast(error.message, 'err');
     state.me.display_name = name;
-    toast('Prénom enregistré');
+    toast('Name saved');
   });
   document.getElementById('pw-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const { error } = await sb.auth.updateUser({ password: new FormData(e.target).get('pw') });
     if (error) return toast(error.message, 'err');
     e.target.reset();
-    toast('Mot de passe changé');
+    toast('Password changed');
   });
   document.getElementById('logout').addEventListener('click', () => sb.auth.signOut());
 }
@@ -553,7 +553,7 @@ async function route() {
   try {
     await routes[page]();
   } catch (err) {
-    $app.innerHTML = `<section class="panel"><p>Oups : ${esc(err.message)}</p><button class="btn" onclick="location.reload()">Réessayer</button></section>`;
+    $app.innerHTML = `<section class="panel"><p>Oops: ${esc(err.message)}</p><button class="btn" onclick="location.reload()">Try again</button></section>`;
   }
   window.scrollTo(0, 0);
 }
