@@ -625,6 +625,10 @@ function renderJeu() {
         <span class="game-art memory-art" aria-hidden="true">${backHTML()}</span>
         <span><b>Memory</b><small class="muted">Find the pairs among your cards. ${state.me.memory_reward_on === today ? 'Today\'s coins already earned.' : `First game of the day: up to 50 ${COIN}.`}</small></span>
       </a>
+      <a class="game-card" href="#/puzzle">
+        <span class="game-art puzzle-art" aria-hidden="true">${[0, 1, 2, 3].map((i) => `<i class="pz${i}"></i>`).join('')}</span>
+        <span><b>Puzzle</b><small class="muted">Put one of your photos back together. Each finished puzzle gives up to ${puzzleReward(5)} ${COIN}, within the same daily limit as Blocks.</small></span>
+      </a>
     </section>`;
 }
 
@@ -921,6 +925,230 @@ function renderBlocks() {
   if (g.pieces.every((x) => !x || !fitsSomewhere(g.grid, x))) gameOver();
 }
 
+/* ---------- mini-jeu : Puzzle ---------- */
+
+const PUZZLE_SIZES = [3, 4, 5];
+const fmtClock = (sec) => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+const puzzleReward = (n) => n * n * Number(state.settings?.puzzle_coins_per_piece ?? 2);
+
+function puzzlePool() {
+  const mine = state.owned.get(state.me.id) || new Map();
+  return state.cards.filter((c) => mine.has(c.id) && c.image_path);
+}
+
+function loadPuzzleGame() {
+  try {
+    const g = JSON.parse(localStorage.getItem('puzzleGame') || 'null');
+    if (g && g.order?.length === g.size * g.size) return g;
+  } catch { /* rien d'enregistré */ }
+  return null;
+}
+function savePuzzleGame(g) {
+  try {
+    if (g) { localStorage.setItem('puzzleGame', JSON.stringify(g)); localStorage.setItem('puzzleSize', g.size); }
+    else localStorage.removeItem('puzzleGame');
+  } catch { /* stockage indisponible */ }
+}
+
+function newPuzzleGame(size, pool, avoidId) {
+  const choices = pool.length > 1 ? pool.filter((c) => c.id !== avoidId) : pool;
+  const card = choices[Math.floor(Math.random() * choices.length)];
+  const n = size * size;
+  const order = [...Array(n).keys()];
+  // mélange jusqu'à ce que presque aucun morceau ne soit déjà à sa place
+  do {
+    for (let i = n - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
+  } while (order.filter((p, k) => p === k).length > 1);
+  return { cardId: card.id, size, order, moves: 0, elapsed: 0 };
+}
+
+async function renderPuzzle() {
+  const pool = puzzlePool();
+  const today = todayParis();
+  const cap = Number(state.settings?.games_daily_cap ?? 60);
+  const earned = state.me.game_coins_on === today ? Number(state.me.game_coins_today || 0) : 0;
+  let g = loadPuzzleGame();
+  if (g && !pool.some((c) => c.id === g.cardId)) g = null;
+  let savedSize = 4;
+  try { savedSize = Number(localStorage.getItem('puzzleSize')) || 4; } catch { /* rien */ }
+  if (!g && pool.length) { g = newPuzzleGame(PUZZLE_SIZES.includes(savedSize) ? savedSize : 4, pool); savePuzzleGame(g); }
+
+  $app.innerHTML = `
+    <section class="puzzle-page">
+      <a class="back-link" href="#/jeu">← Games</a>
+      <header class="page-head">
+        <h1>Puzzle</h1>
+        <p class="coins" id="coins">${Number(state.me.coins ?? 0)} ${COIN}</p>
+      </header>
+      ${!pool.length
+        ? '<p class="panel muted">Pull a card with a photo to play: the puzzle uses the photos of your own cards.</p>'
+        : `<div class="scores">
+            <div><small class="muted">Moves</small><b id="moves">${g.moves}</b></div>
+            <div><small class="muted">Time</small><b id="clock">${fmtClock(g.elapsed)}</b></div>
+            <div><small class="muted">Coins today</small><b id="today">${earned}/${cap}</b></div>
+          </div>
+          <div class="sizes" role="group" aria-label="Number of pieces">
+            ${PUZZLE_SIZES.map((n) => `<button type="button" class="size${n === g.size ? ' on' : ''}" data-n="${n}">${n}×${n}<small>+${puzzleReward(n)} ${COIN}</small></button>`).join('')}
+          </div>
+          <p class="muted small">Tap two pieces to swap them, or drag one onto another.</p>
+          <div class="puzzle" id="puzzle"><div class="peek-img" id="peek-img"></div></div>
+          <div id="puzzle-end"></div>
+          <div class="reveal-actions">
+            <button class="btn ghost" id="peek" type="button">Hold to peek</button>
+            <button class="btn ghost" id="new-photo" type="button">Another photo</button>
+          </div>`}
+    </section>`;
+  if (!pool.length) return;
+
+  const card = pool.find((c) => c.id === g.cardId);
+  const url = await signedUrls([card.image_path]);
+  const src = url(card.image_path);
+  const board = document.getElementById('puzzle');
+  if (!board) return;
+  const img = new Image();
+  img.src = src;
+  await img.decode().catch(() => {});
+  if (!board.isConnected) return;
+
+  const size = g.size;
+  const n = size * size;
+  const tiles = [];
+  for (let p = 0; p < n; p++) {
+    const t = document.createElement('div');
+    t.className = 'ptile';
+    t.style.backgroundImage = `url("${src}")`;
+    board.appendChild(t);
+    tiles.push(t);
+  }
+  const peekImg = document.getElementById('peek-img');
+  peekImg.style.backgroundImage = `url("${src}")`;
+
+  let tw = 0, th = 0, selected = null, solved = false;
+  const slotOf = (p) => g.order.indexOf(p);
+  const layout = () => {
+    const W = board.clientWidth, H = W * 4 / 3;
+    board.style.height = `${H}px`;
+    tw = W / size; th = H / size;
+    // la photo couvre tout le plateau, comme sur la carte
+    const iw = img.naturalWidth || W, ih = img.naturalHeight || H;
+    const s = Math.max(W / iw, H / ih), bw = iw * s, bh = ih * s, ox = (W - bw) / 2, oy = (H - bh) / 2;
+    peekImg.style.backgroundSize = `${bw}px ${bh}px`;
+    peekImg.style.backgroundPosition = `${ox}px ${oy}px`;
+    tiles.forEach((t, p) => {
+      const k = slotOf(p);
+      t.dataset.slot = k;
+      t.style.width = `${tw}px`; t.style.height = `${th}px`;
+      t.style.backgroundSize = `${bw}px ${bh}px`;
+      t.style.backgroundPosition = `${ox - (p % size) * tw}px ${oy - Math.floor(p / size) * th}px`;
+      t.style.transform = `translate(${(k % size) * tw}px, ${Math.floor(k / size) * th}px)`;
+      t.classList.toggle('ok', k === p);
+    });
+  };
+  layout();
+  new ResizeObserver(() => { if (board.isConnected) layout(); }).observe(board);
+
+  const t0 = Date.now() - g.elapsed * 1000;
+  const clock = setInterval(() => {
+    const el = document.getElementById('clock');
+    if (!el || solved) return clearInterval(clock);
+    g.elapsed = Math.floor((Date.now() - t0) / 1000);
+    el.textContent = fmtClock(g.elapsed);
+  }, 250);
+
+  const clearSel = () => { if (selected !== null) tiles[g.order[selected]].classList.remove('selected'); selected = null; };
+  const swap = (a, b) => {
+    [g.order[a], g.order[b]] = [g.order[b], g.order[a]];
+    g.moves++;
+    g.elapsed = Math.floor((Date.now() - t0) / 1000);
+    document.getElementById('moves').textContent = g.moves;
+    layout();
+    savePuzzleGame(g);
+    if (g.order.every((p, k) => p === k)) finish();
+  };
+
+  const finish = async () => {
+    solved = true;
+    clearInterval(clock);
+    savePuzzleGame(null);
+    board.classList.add('solved');
+    const seconds = Math.max(1, Math.round((Date.now() - t0) / 1000));
+    const { data, error } = await sb.rpc('claim_puzzle', { size, moves: g.moves, seconds });
+    let line = '';
+    if (error) line = `<p class="muted">${esc(error.message)}</p>`;
+    else {
+      const prev = Number(state.me.puzzle_best?.[size] ?? 0);
+      state.me.coins = data.coins;
+      state.me.game_coins_on = today;
+      state.me.game_coins_today = data.today;
+      state.me.puzzle_best = { ...(state.me.puzzle_best || {}), [size]: data.best };
+      document.getElementById('coins').textContent = `${data.coins} ${COIN}`;
+      document.getElementById('today').textContent = `${data.today}/${data.cap}`;
+      line = `${data.gain ? `<p class="big">+${data.gain} ${COIN}</p>` : '<p class="muted">Daily coin limit reached.</p>'}${!prev || seconds < prev ? `<p class="record">New ${size}×${size} record!</p>` : `<p class="muted small">Your ${size}×${size} record: ${fmtClock(prev)}</p>`}`;
+    }
+    const entry = state.owned.get(state.me.id)?.get(card.id);
+    const end = document.getElementById('puzzle-end');
+    if (!end) return;
+    end.innerHTML = `
+      <div class="panel memory-done">
+        <h2>Photo complete!</h2>
+        <p>${g.moves} moves · ${fmtClock(seconds)}</p>
+        ${line}
+        <div class="puzzle-card">${cardHTML(card, url, { variant: entry ? bestVariant(entry) : 'normal' })}</div>
+        <button class="btn primary" id="again" type="button">Next puzzle</button>
+      </div>`;
+    setTimeout(() => end.scrollIntoView({ behavior: 'smooth', block: 'center' }), 500);
+    document.getElementById('again').addEventListener('click', () => { savePuzzleGame(newPuzzleGame(size, pool, card.id)); renderPuzzle(); });
+  };
+
+  // toucher deux morceaux pour les échanger, ou en glisser un sur un autre
+  board.addEventListener('pointerdown', (e) => {
+    const el = e.target.closest('.ptile');
+    if (!el || solved) return;
+    e.preventDefault();
+    const from = Number(el.dataset.slot);
+    const rect = board.getBoundingClientRect();
+    const base = el.style.transform;
+    const sx = e.clientX, sy = e.clientY;
+    let dragging = false;
+    const move = (ev) => {
+      const dx = ev.clientX - sx, dy = ev.clientY - sy;
+      if (!dragging && Math.hypot(dx, dy) > 8) { dragging = true; clearSel(); el.classList.add('dragging'); }
+      if (dragging) el.style.transform = `translate(${(from % size) * tw + dx}px, ${Math.floor(from / size) * th + dy}px) scale(1.06)`;
+    };
+    const up = (ev) => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+      el.classList.remove('dragging');
+      if (dragging) {
+        const c = Math.floor((ev.clientX - rect.left) / tw), r = Math.floor((ev.clientY - rect.top) / th);
+        const to = ev.type === 'pointerup' && r >= 0 && r < size && c >= 0 && c < size ? r * size + c : from;
+        if (to !== from) swap(from, to); else el.style.transform = base;
+      } else if (selected === null) { selected = from; el.classList.add('selected'); }
+      else if (selected === from) clearSel();
+      else { const a = selected; clearSel(); swap(a, from); }
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+  });
+
+  const peek = document.getElementById('peek');
+  const showPeek = (on) => board.classList.toggle('peek', on);
+  peek.addEventListener('pointerdown', (e) => { e.preventDefault(); showPeek(true); });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => peek.addEventListener(ev, () => showPeek(false)));
+
+  const restart = (newSize) => {
+    if (!solved && g.moves > 0 && !confirm('Start a new puzzle? The current one will be lost.')) return;
+    savePuzzleGame(newPuzzleGame(newSize, pool, card.id));
+    renderPuzzle();
+  };
+  document.getElementById('new-photo').addEventListener('click', () => restart(size));
+  document.querySelectorAll('.sizes .size').forEach((b) => b.addEventListener('click', () => {
+    if (Number(b.dataset.n) !== size) restart(Number(b.dataset.n));
+  }));
+}
+
 /* ---------- profil ---------- */
 
 function renderProfil() {
@@ -951,6 +1179,7 @@ function renderProfil() {
         </div>
         <div class="rates-grid">
           <label>Blocks: coins per line<span class="pct"><input name="blocks_coins_per_line" type="number" inputmode="numeric" min="0" step="1" value="${Number(state.settings?.blocks_coins_per_line ?? 3)}">${COIN}</span></label>
+          <label>Puzzle: coins per piece<span class="pct"><input name="puzzle_coins_per_piece" type="number" inputmode="numeric" min="0" step="1" value="${Number(state.settings?.puzzle_coins_per_piece ?? 2)}">${COIN}</span></label>
           <label>Daily coin limit for games<span class="pct"><input name="games_daily_cap" type="number" inputmode="numeric" min="0" step="1" value="${Number(state.settings?.games_daily_cap ?? 60)}">${COIN}</span></label>
         </div>
         <button class="btn" type="submit">Save settings</button>
@@ -997,7 +1226,7 @@ function renderProfil() {
     if (Math.round(rateSum() * 100) / 100 !== 100) return toast('The rarity rates must add up to 100%', 'err');
     const patch = { updated_at: new Date().toISOString() };
     for (const k of [...RARITIES.map((r) => `rate_${r.id}`), 'holo_chance', 'gold_chance', 'cooldown_hours']) patch[k] = Number(ratesForm[k].value);
-    for (const k of ['pack_price', 'max_stored_packs', 'blocks_coins_per_line', 'games_daily_cap', ...RARITIES.map((r) => `coins_${r.id}`)]) patch[k] = Math.round(Number(ratesForm[k].value));
+    for (const k of ['pack_price', 'max_stored_packs', 'blocks_coins_per_line', 'puzzle_coins_per_piece', 'games_daily_cap', ...RARITIES.map((r) => `coins_${r.id}`)]) patch[k] = Math.round(Number(ratesForm[k].value));
     const { data, error } = await sb.from('game_settings').update(patch).eq('id', 1).select().maybeSingle();
     if (error) return toast(error.message, 'err');
     if (data) state.settings = data;
@@ -1007,7 +1236,7 @@ function renderProfil() {
 
 /* ---------- routeur ---------- */
 
-const routes = { booster: renderBooster, collection: renderCollection, jeu: renderJeu, blocks: renderBlocks, memory: renderMemory, ajouter: renderAjouter, profil: renderProfil };
+const routes = { booster: renderBooster, collection: renderCollection, jeu: renderJeu, blocks: renderBlocks, memory: renderMemory, puzzle: renderPuzzle, ajouter: renderAjouter, profil: renderProfil };
 
 async function route() {
   clearInterval(state.timer);
@@ -1015,7 +1244,7 @@ async function route() {
   const name = (location.hash.replace(/^#\/?/, '') || 'booster').split('?')[0];
   const page = routes[name] ? name : 'booster';
   $nav.hidden = false;
-  const tab = ['blocks', 'memory'].includes(page) ? 'jeu' : page;
+  const tab = ['blocks', 'memory', 'puzzle'].includes(page) ? 'jeu' : page;
   $nav.querySelectorAll('a').forEach((a) => a.classList.toggle('active', a.dataset.route === tab));
   try {
     await routes[page]();

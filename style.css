@@ -531,3 +531,36 @@ input:focus, select:focus { outline: 2px solid var(--rose); outline-offset: 1px;
 .piece i[style] { box-shadow: inset 0 -2px 0 rgba(0,0,0,.25), inset 0 2px 0 rgba(255,255,255,.25); }
 .drag-ghost { position: fixed; left: 0; top: 0; z-index: 60; pointer-events: none; filter: drop-shadow(0 10px 16px rgba(0,0,0,.5)); }
 .drag-ghost .piece { gap: 3px; }
+
+/* ---------- Puzzle ---------- */
+.sizes { display: flex; gap: 8px; margin-bottom: 8px; }
+.sizes .size {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 6px;
+  border-radius: 14px; border: 1px solid var(--line); background: var(--surface); color: var(--text);
+  font: 700 1rem var(--font); cursor: pointer;
+}
+.sizes .size small { font-weight: 500; font-size: .75rem; color: var(--gold); }
+.sizes .size.on { border-color: var(--rose); background: var(--surface2); box-shadow: 0 0 0 1px var(--rose) inset; }
+.puzzle {
+  position: relative; width: min(100%, 420px); margin: 6px auto 0; border-radius: 16px; overflow: hidden;
+  background: var(--bg2); border: 1px solid var(--line); touch-action: none; user-select: none; -webkit-user-select: none;
+}
+.ptile {
+  position: absolute; top: 0; left: 0; background-repeat: no-repeat; cursor: grab;
+  box-shadow: inset 0 0 0 1px rgba(20,13,24,.85); border-radius: 3px;
+  transition: transform .22s ease, box-shadow .2s, border-radius .4s;
+}
+.ptile.ok { box-shadow: inset 0 0 0 1px rgba(20,13,24,.35); }
+.ptile.selected { box-shadow: inset 0 0 0 3px var(--gold); z-index: 2; }
+.ptile.dragging { transition: none; z-index: 3; cursor: grabbing; box-shadow: 0 10px 24px rgba(0,0,0,.55), inset 0 0 0 2px var(--rose2); }
+.puzzle.solved .ptile { box-shadow: none; border-radius: 0; cursor: default; }
+.puzzle.solved { animation: solved-glow 1.2s ease; }
+@keyframes solved-glow { 40% { box-shadow: 0 0 0 4px var(--gold), 0 0 40px rgba(245,196,107,.6); } }
+.peek-img { position: absolute; inset: 0; z-index: 5; background-repeat: no-repeat; opacity: 0; pointer-events: none; transition: opacity .15s; }
+.puzzle.peek .peek-img { opacity: 1; }
+.puzzle-card { width: min(220px, 60vw); margin: 8px auto 0; }
+.puzzle-art { grid-template-columns: repeat(2, 1fr); gap: 4px; padding: 10px; }
+.puzzle-art i { border-radius: 5px; background: linear-gradient(135deg, #ff8fb2, #7b2163); }
+.puzzle-art .pz1 { background: linear-gradient(135deg, #f5c46b, #d94a80); transform: translate(4px, -4px) rotate(8deg); box-shadow: 0 4px 8px rgba(0,0,0,.4); }
+.puzzle-art .pz2 { background: linear-gradient(135deg, #d94a80, #3d0f3a); }
+.puzzle-art .pz3 { background: linear-gradient(135deg, #b977ff, #5a2a7a); }

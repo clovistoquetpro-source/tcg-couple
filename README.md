@@ -37,9 +37,10 @@ Chaque doublon rapporte des pièces (Commune 5, Peu commune 10, Rare 25, Épique
 ## Jeux (onglet Play)
 
 - **Blocks** : on glisse des formes sur une grille 8×8, chaque ligne ou colonne pleine disparaît. Chaque ligne rapporte 3 pièces (`blocks_lines()`), jusqu'à 300 pièces par jour. La partie est gardée dans le téléphone si on quitte la page.
+- **Puzzle** : une photo de vos cartes découpée en 3×3, 4×4 ou 5×5 morceaux à remettre en place en les échangeant. Un puzzle fini rapporte 2 pièces par morceau (`claim_puzzle()`), dans le même plafond du jour que Blocks.
 - **Memory** : 6 paires de vos cartes. La première partie du jour rapporte jusqu'à 50 pièces selon le nombre de coups (`claim_memory()`).
 
-Le gain par ligne et le plafond du jour se règlent dans Profile → Game settings.
+Le gain par ligne, le gain par morceau et le plafond du jour se règlent dans Profile → Game settings.
 
 ## Mettre en ligne sur Vercel
 
