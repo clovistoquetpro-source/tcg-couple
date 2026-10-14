@@ -47,6 +47,10 @@ Le gain par ligne et le plafond du jour se règlent dans Profile → Game settin
 2. Importer le dépôt `tcg-couple`.
 3. Framework : « Other », sans commande de build. Cliquer sur Deploy.
 
+## Depuis la Chine
+
+`*.vercel.app` est bloqué en Chine. La même app est aussi publiée par GitHub Pages sur https://clovistoquetpro-source.github.io/tcg-couple/ (même base de données, mise à jour à chaque push). Les polices sont dans `fonts/` au lieu de Google Fonts, qui est aussi bloqué là-bas.
+
 ## Fichiers
 
 - `index.html`, `style.css`, `app.js` : l'app

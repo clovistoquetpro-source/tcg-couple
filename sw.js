@@ -1,6 +1,6 @@
 // Garde le site disponible hors ligne ; les données Supabase ne sont jamais mises en cache ici.
-const CACHE = 'nos-cartes-v8';
-const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'config.js', 'vendor/supabase.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png'];
+const CACHE = 'nos-cartes-v9';
+const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'config.js', 'vendor/supabase.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'fonts/dm-sans-latin-wght-normal.woff2', 'fonts/fraunces-latin-opsz-normal.woff2'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
