@@ -627,7 +627,7 @@ function renderJeu() {
       </a>
       <a class="game-card" href="#/burger">
         <span class="game-art burger-art" aria-hidden="true">${stackHTML(['bun', 'patty', 'cheese', 'lettuce', 'top'])}</span>
-        <span><b>Burger Shop</b><small class="muted">Build the burgers and serve the drinks before the customers lose patience. Each order gives ${Number(state.settings?.burger_coins_per_order ?? 4)} ${COIN}, within the daily limit.</small></span>
+        <span><b>Burger Shop</b><small class="muted">Grill the meat, fry the fries without burning them, and serve before the customers lose patience. Each order gives ${Number(state.settings?.burger_coins_per_order ?? 4)} ${COIN}, within the daily limit.</small></span>
       </a>
       <a class="game-card" href="#/puzzle">
         <span class="game-art puzzle-art" aria-hidden="true">${[0, 1, 2, 3].map((i) => `<i class="pz${i}"></i>`).join('')}</span>
@@ -1155,47 +1155,73 @@ async function renderPuzzle() {
 
 /* ---------- mini-jeu : Burger Shop ---------- */
 
-const FILLINGS = [
-  { id: 'patty', label: 'Patty', from: 1 },
-  { id: 'cheese', label: 'Cheese', from: 1 },
-  { id: 'lettuce', label: 'Lettuce', from: 1 },
-  { id: 'tomato', label: 'Tomato', from: 1 },
-  { id: 'onion', label: 'Onion', from: 2 },
-  { id: 'bacon', label: 'Bacon', from: 3 },
-  { id: 'sauce', label: 'Sauce', from: 4 },
+// kind : bun = pain, grill = à cuire sur le grill, fry = friteuse, top = se pose directement
+const INGREDIENTS = [
+  { id: 'bun', label: 'Bun', kind: 'bun', from: 1 },
+  { id: 'hdbun', label: 'Hot dog', kind: 'bun', from: 3 },
+  { id: 'patty', label: 'Patty', kind: 'grill', from: 1 },
+  { id: 'bacon', label: 'Bacon', kind: 'grill', from: 2 },
+  { id: 'sausage', label: 'Sausage', kind: 'grill', from: 3 },
+  { id: 'cheese', label: 'Cheese', kind: 'top', from: 1 },
+  { id: 'lettuce', label: 'Lettuce', kind: 'top', from: 1 },
+  { id: 'tomato', label: 'Tomato', kind: 'top', from: 1 },
+  { id: 'onion', label: 'Onion', kind: 'top', from: 2 },
+  { id: 'sauce', label: 'Sauce', kind: 'top', from: 3 },
+  { id: 'fries', label: 'Fries', kind: 'fry', from: 1 },
 ];
 const DRINKS = [
   { id: 'cola', label: 'Cola', from: 1 },
   { id: 'lemon', label: 'Lemonade', from: 2 },
-  { id: 'orange', label: 'Orange', from: 3 },
+  { id: 'orange', label: 'Orange', from: 4 },
 ];
+// secondes de cuisson : prêt à partir de done, brûlé à partir de burn
+const COOK = {
+  patty: { done: 5, burn: 11 },
+  bacon: { done: 3.5, burn: 8 },
+  sausage: { done: 4.5, burn: 10 },
+  fries: { done: 5, burn: 10.5 },
+};
 const CUSTOMERS = ['👩', '👨', '👧', '👦', '👵', '👴', '🧔', '👩‍🦰', '👨‍🦱', '👱‍♀️', '👩‍🦳', '🧑‍🦱', '👨‍🦰', '👱'];
 const MAX_LAYERS = 9;
+const GRILL_SLOTS = 3;
+const FRYER_SLOTS = 2;
 
 const stackHTML = (layers) => `<span class="bstack">${layers.map((l) => `<i class="L L-${l}"></i>`).join('')}</span>`;
 const cupHTML = (d) => (d ? `<span class="cup cup-${d}"><i></i></span>` : '');
+const friesHTML = (on = true) => (on ? '<span class="fries"></span>' : '');
 const pick = (a) => a[Math.floor(Math.random() * a.length)];
+const shuffle = (a) => a.sort(() => Math.random() - 0.5);
+const cookState = (it) => (it.t < COOK[it.item].done ? 'raw' : it.t < COOK[it.item].burn ? 'done' : 'burnt');
 
 function burgerLevel(n) {
+  const open = (x) => x.from <= n;
   return {
     goal: 4 + n * 2,
     seats: Math.min(3, 1 + Math.ceil(n / 2)),
-    fillings: FILLINGS.filter((f) => f.from <= n).map((f) => f.id),
-    drinks: DRINKS.filter((d) => d.from <= n).map((d) => d.id),
-    maxExtra: Math.min(5, 1 + Math.ceil(n / 2)),
-    patience: Math.max(12, 30 - n * 2),
-    drinkChance: Math.min(0.75, 0.3 + n * 0.1),
+    extras: INGREDIENTS.filter((i) => open(i) && (i.kind === 'top' || i.id === 'bacon')).map((i) => i.id),
+    drinks: DRINKS.filter(open).map((d) => d.id),
+    maxExtra: Math.min(4, 1 + Math.floor(n / 2)),
+    patience: Math.max(16, 34 - n * 2),
+    drinkChance: Math.min(0.7, 0.3 + n * 0.1),
+    friesChance: Math.min(0.6, 0.2 + n * 0.1),
+    hotdogChance: n >= 3 ? 0.3 : 0,
   };
 }
 
 function newOrder(cfg) {
-  const extras = cfg.fillings.filter((f) => f !== 'patty').sort(() => Math.random() - 0.5)
-    .slice(0, 1 + Math.floor(Math.random() * cfg.maxExtra));
-  const middle = ['patty', ...extras].sort(() => Math.random() - 0.5);
-  const layers = ['bun', ...middle, 'top'];
+  let layers;
+  if (Math.random() < cfg.hotdogChance) {
+    const extras = shuffle(['onion', 'sauce', 'cheese'].filter((x) => cfg.extras.includes(x))).slice(0, Math.floor(Math.random() * 3));
+    layers = ['hdbun', 'sausage', ...extras];
+  } else {
+    const extras = shuffle([...cfg.extras]).slice(0, 1 + Math.floor(Math.random() * cfg.maxExtra));
+    layers = ['bun', ...shuffle(['patty', ...extras]), 'top'];
+  }
   const drink = Math.random() < cfg.drinkChance ? pick(cfg.drinks) : null;
-  const patience = cfg.patience + layers.length * 2.5 + (drink ? 3 : 0);
-  return { layers, drink, patience };
+  const fries = Math.random() < cfg.friesChance;
+  const cooking = Math.max(0, ...layers.filter((l) => COOK[l]).map((l) => COOK[l].done), fries ? COOK.fries.done : 0);
+  const patience = cfg.patience + layers.length * 2.5 + cooking * 1.5 + (drink ? 2 : 0) + (fries ? 3 : 0);
+  return { layers, drink, fries, patience };
 }
 
 function renderBurger() {
@@ -1203,6 +1229,9 @@ function renderBurger() {
   const today = todayParis();
   let earned = state.me.game_coins_on === today ? Number(state.me.game_coins_today || 0) : 0;
   const perOrder = Number(state.settings?.burger_coins_per_order ?? 4);
+  const byId = Object.fromEntries(INGREDIENTS.map((i) => [i.id, i]));
+  const binOrder = ['bun', 'hdbun', 'patty', 'bacon', 'sausage', 'cheese', 'lettuce', 'tomato', 'onion', 'sauce', 'fries'];
+  const binArt = (id) => (id === 'fries' ? friesHTML() : id === 'bun' ? stackHTML(['top']) : stackHTML([id]));
 
   $app.innerHTML = `
     <section class="burger-page">
@@ -1211,22 +1240,28 @@ function renderBurger() {
         <h1>Burger Shop</h1>
         <p class="coins" id="coins">${Number(state.me.coins ?? 0)} ${COIN}</p>
       </header>
-      <div class="scores bscores">
-        <div><small class="muted">Level</small><b id="b-level">1</b></div>
-        <div><small class="muted">Score</small><b id="b-score">$0</b></div>
-        <div><small class="muted">Lives</small><b id="b-lives">♥♥♥</b></div>
-        <div><small class="muted">Served</small><b id="b-served">0/6</b></div>
-      </div>
       <div class="bshop" id="bshop">
+        <div class="bbar">
+          <span>Level <b id="b-level">1</b></span>
+          <b id="b-score">$0</b>
+          <span id="b-lives">♥♥♥</span>
+          <span><b id="b-served">0/6</b> served</span>
+        </div>
         <div class="counter" id="counter">${[0, 1, 2].map((s) => `<div class="seat" data-s="${s}"></div>`).join('')}</div>
         <div class="counter-edge"></div>
+        <div class="stations">
+          <div class="grill" id="grill">${[...Array(GRILL_SLOTS).keys()].map((k) => `<button class="gslot empty" type="button" data-g="${k}"></button>`).join('')}</div>
+          <div class="fryer" id="fryer">${[...Array(FRYER_SLOTS).keys()].map((k) => `<button class="fslot empty" type="button" data-f="${k}"></button>`).join('')}</div>
+        </div>
         <div class="work">
           <div class="plate" id="plate"></div>
-          <div class="cup-slot" id="cup-slot"></div>
+          <div class="sides">
+            <div class="side-slot" id="fries-slot"></div>
+            <div class="side-slot" id="cup-slot"></div>
+          </div>
         </div>
         <div class="bins" id="bins">
-          <button class="bin" type="button" data-add="bun"><span class="bin-art">${stackHTML(['top'])}</span><small>Bun</small></button>
-          ${FILLINGS.map((f) => `<button class="bin" type="button" data-add="${f.id}" data-from="${f.from}"><span class="bin-art">${stackHTML([f.id])}</span><small>${f.label}</small></button>`).join('')}
+          ${binOrder.map((id) => `<button class="bin" type="button" data-add="${id}" data-from="${byId[id].from}"><span class="bin-art">${binArt(id)}</span><small>${byId[id].label}</small></button>`).join('')}
           ${DRINKS.map((d) => `<button class="bin drink" type="button" data-drink="${d.id}" data-from="${d.from}"><span class="bin-art">${cupHTML(d.id)}</span><small>${d.label}</small></button>`).join('')}
           <button class="bin trash" type="button" id="trash"><span class="bin-art">🗑️</span><small>Trash</small></button>
         </div>
@@ -1237,19 +1272,23 @@ function renderBurger() {
   const $ = (id) => document.getElementById(id);
   const counter = $('counter');
   const seatsEl = [...counter.children];
+  const grillEl = [...$('grill').children];
+  const fryerEl = [...$('fryer').children];
   const g = { level: 1, score: 0, lives: 3, running: false };
-  let cfg, seats, tray, spawned, resolved, served, nextSpawn, last, loop;
+  let cfg, seats, tray, grill, fryer, spawned, resolved, served, nextSpawn, last, loop;
 
   const showStats = () => {
     $('b-level').textContent = g.level;
     $('b-score').textContent = `$${g.score}`;
-    $('b-lives').textContent = '♥'.repeat(g.lives) + '♡'.repeat(Math.max(0, 3 - g.lives));
+    $('b-lives').textContent = '♥'.repeat(Math.max(0, g.lives)) + '♡'.repeat(Math.max(0, 3 - g.lives));
     $('b-served').textContent = `${served}/${cfg.goal}`;
   };
   const showTray = () => {
-    $('plate').innerHTML = tray.layers.length ? stackHTML(tray.layers) : '<span class="plate-hint">Tap the ingredients below</span>';
+    $('plate').innerHTML = tray.layers.length ? stackHTML(tray.layers) : '<span class="plate-hint">Your plate</span>';
     $('cup-slot').innerHTML = cupHTML(tray.drink);
     $('cup-slot').classList.toggle('empty', !tray.drink);
+    $('fries-slot').innerHTML = friesHTML(tray.fries);
+    $('fries-slot').classList.toggle('empty', !tray.fries);
   };
   const showBins = () => {
     document.querySelectorAll('#bins [data-from]').forEach((b) => {
@@ -1258,12 +1297,33 @@ function renderBurger() {
       b.classList.toggle('locked', locked);
     });
   };
+
+  // grill et friteuse : une aiguille avance sur une barre grise (cru), verte (prêt) puis rouge (brûlé)
+  const drawCook = (el, it) => {
+    if (!it) { el.className = el.dataset.g !== undefined ? 'gslot empty' : 'fslot empty'; el.innerHTML = ''; delete el.dataset.item; return; }
+    const c = COOK[it.item];
+    if (el.dataset.item !== it.item || !el.firstChild) {
+      el.dataset.item = it.item;
+      const doneP = (c.done / c.burn) * 100;
+      el.innerHTML = `<span class="citem">${it.item === 'fries' ? friesHTML() : stackHTML([it.item])}</span>
+        <span class="cookbar" style="background:linear-gradient(90deg, rgba(255,255,255,.18) 0 ${doneP}%, #52c98f ${doneP}% 96%, #ff5a6e 96%)"><i></i></span>`;
+    }
+    const st = cookState(it);
+    const warn = st === 'done' && it.t > c.done + 0.65 * (c.burn - c.done);
+    el.className = `${el.dataset.g !== undefined ? 'gslot' : 'fslot'} ${st}${warn ? ' warn' : ''}`;
+    el.querySelector('.cookbar i').style.left = `${Math.min(100, (it.t / c.burn) * 100)}%`;
+  };
+  const drawStations = () => {
+    grillEl.forEach((el, k) => drawCook(el, grill[k]));
+    fryerEl.forEach((el, k) => drawCook(el, fryer[k]));
+  };
+
   const drawSeat = (s) => {
     const c = seats[s];
     const el = seatsEl[s];
-    el.className = `seat${c ? ' on' : ''}${c?.happy ? ' happy' : ''}`;
+    el.className = `seat${c ? ' on' : ''}${c?.happy ? ' happy' : ''}${s >= cfg.seats ? ' closed' : ''}`;
     el.innerHTML = c ? `
-      <div class="bubble">${stackHTML(c.order.layers)}${cupHTML(c.order.drink)}</div>
+      <div class="bubble">${stackHTML(c.order.layers)}${friesHTML(c.order.fries)}${cupHTML(c.order.drink)}</div>
       <div class="face">${c.face}<span class="mood"></span></div>
       <div class="patience"><i></i></div>` : '';
     if (c) updateSeat(s);
@@ -1278,14 +1338,13 @@ function renderBurger() {
     const mood = el.querySelector('.mood');
     if (mood) mood.textContent = c.happy ? '😍' : r > 0.5 ? '' : r > 0.25 ? '😐' : '😠';
   };
-  const floatText = (s, text) => {
+  const floatText = (el, text, bad = false) => {
     const f = document.createElement('span');
-    f.className = 'float-gain';
+    f.className = `float-gain${bad ? ' bad' : ''}`;
     f.textContent = text;
-    seatsEl[s].appendChild(f);
+    el.appendChild(f);
     setTimeout(() => f.remove(), 1300);
   };
-
   const overlay = (html) => {
     const o = $('b-overlay');
     o.innerHTML = html ? `<div class="panel b-panel">${html}</div>` : '';
@@ -1295,13 +1354,15 @@ function renderBurger() {
   const startLevel = () => {
     cfg = burgerLevel(g.level);
     seats = [null, null, null];
-    tray = { layers: [], drink: null };
+    tray = { layers: [], drink: null, fries: false };
+    grill = Array(GRILL_SLOTS).fill(null);
+    fryer = Array(FRYER_SLOTS).fill(null);
     spawned = 0; resolved = 0; served = 0;
     nextSpawn = performance.now() + 600;
     last = performance.now();
     g.running = true;
-    seatsEl.forEach((el, s) => { el.classList.toggle('closed', s >= cfg.seats); drawSeat(s); });
-    showStats(); showTray(); showBins(); overlay('');
+    seatsEl.forEach((el, s) => drawSeat(s));
+    showStats(); showTray(); showBins(); drawStations(); overlay('');
     clearInterval(loop);
     loop = setInterval(tick, 100);
   };
@@ -1311,7 +1372,7 @@ function renderBurger() {
     clearInterval(loop);
     g.lives = Math.min(3, g.lives + 1);
     showStats();
-    const unlock = [...FILLINGS, ...DRINKS].filter((x) => x.from === g.level + 1).map((x) => x.label);
+    const unlock = [...INGREDIENTS, ...DRINKS].filter((x) => x.from === g.level + 1).map((x) => (x.id === 'hdbun' ? 'Hot dogs' : x.label));
     overlay(`<h2>Level ${g.level} complete!</h2><p>Score $${g.score}</p>${unlock.length ? `<p class="muted small">New: ${unlock.join(', ')}</p>` : ''}<button class="btn primary" id="b-next" type="button">Next level</button>`);
     $('b-next').addEventListener('click', () => { g.level++; startLevel(); });
   };
@@ -1343,14 +1404,14 @@ function renderBurger() {
     const dt = (now - last) / 1000;
     last = now;
     if (!g.running || document.hidden) { nextSpawn += dt * 1000; return; }
+    [...grill, ...fryer].forEach((it) => { if (it) it.t += dt; });
+    drawStations();
     seats.forEach((c, s) => {
       if (!c || c.happy || !g.running) return;
       c.left -= dt;
       if (c.left <= 0) {
         g.lives--;
-        seatsEl[s].classList.add('angry');
         toast('A customer left angry 😠', 'err');
-        setTimeout(() => seatsEl[s].classList.remove('angry'), 600);
         leave(s);
       } else updateSeat(s);
     });
@@ -1363,16 +1424,33 @@ function renderBurger() {
         seats[s] = { face: pick(CUSTOMERS), order, left: order.patience, happy: false };
         spawned++;
         drawSeat(s);
-        nextSpawn = now + 2500 + Math.random() * 3500;
+        nextSpawn = now + 3000 + Math.random() * 4000;
       }
     }
   }
 
+  // ajoute une couche sur l'assiette ; renvoie false si c'est impossible
+  const addLayer = (id) => {
+    const L = tray.layers;
+    if (L[L.length - 1] === 'top') { toast('This burger is closed: serve it or trash it'); return false; }
+    if (L.length >= MAX_LAYERS) { toast('Too tall!'); return false; }
+    if (!L.length) L.push(id === 'sausage' ? 'hdbun' : 'bun');
+    L.push(id);
+    showTray();
+    return true;
+  };
+
+  const burn = (el) => {
+    g.score = Math.max(0, g.score - 2);
+    showStats();
+    floatText(el, 'Burnt! −$2', true);
+  };
+
   const serve = (s) => {
     const c = seats[s];
     if (!g.running || !c || c.happy) return;
-    if (!tray.layers.length && !tray.drink) return;
-    const ok = tray.layers.join() === c.order.layers.join() && tray.drink === c.order.drink;
+    if (!tray.layers.length && !tray.drink && !tray.fries) return;
+    const ok = tray.layers.join() === c.order.layers.join() && tray.drink === c.order.drink && tray.fries === c.order.fries;
     if (!ok) {
       c.left = Math.max(0.5, c.left - 3);
       seatsEl[s].classList.remove('wrong'); void seatsEl[s].offsetWidth; seatsEl[s].classList.add('wrong');
@@ -1380,19 +1458,19 @@ function renderBurger() {
       return;
     }
     const tip = Math.round(3 * c.left / c.order.patience);
-    const price = c.order.layers.length + (c.order.drink ? 2 : 0) + tip;
+    const price = c.order.layers.length + (c.order.drink ? 2 : 0) + (c.order.fries ? 2 : 0) + tip;
     g.score += price;
     served++;
     c.happy = true;
-    tray = { layers: [], drink: null };
+    tray = { layers: [], drink: null, fries: false };
     showTray(); drawSeat(s); showStats();
-    floatText(s, `+$${price}`);
+    floatText(seatsEl[s], `+$${price}`);
     sb.rpc('burger_serve').then(({ data }) => {
       if (!data) return;
       state.me.coins = data.coins;
       state.me.game_coins_on = today;
       state.me.game_coins_today = data.today;
-      if (data.gain) setTimeout(() => floatText(s, `+${data.gain} ${COIN}`), 350);
+      if (data.gain) setTimeout(() => floatText(seatsEl[s], `+${data.gain} ${COIN}`), 350);
       else if (earned < data.cap && data.today >= data.cap) toast('Daily coin limit reached');
       earned = data.today;
       const el = $('coins');
@@ -1405,25 +1483,64 @@ function renderBurger() {
     const seat = e.target.closest('.seat.on');
     if (seat) serve(Number(seat.dataset.s));
   });
+
+  $('grill').addEventListener('click', (e) => {
+    const el = e.target.closest('.gslot');
+    if (!el || !g.running) return;
+    const k = Number(el.dataset.g);
+    const it = grill[k];
+    if (!it) return;
+    const st = cookState(it);
+    if (st === 'raw') return toast('Still cooking…');
+    if (st === 'burnt') { grill[k] = null; burn(el); }
+    else if (addLayer(it.item)) grill[k] = null;
+    drawStations();
+  });
+  $('fryer').addEventListener('click', (e) => {
+    const el = e.target.closest('.fslot');
+    if (!el || !g.running) return;
+    const k = Number(el.dataset.f);
+    const it = fryer[k];
+    if (!it) return;
+    const st = cookState(it);
+    if (st === 'raw') return toast('Still frying…');
+    if (st === 'burnt') { fryer[k] = null; burn(el); }
+    else if (tray.fries) return toast('There are already fries on the tray');
+    else { tray.fries = true; fryer[k] = null; showTray(); }
+    drawStations();
+  });
+
   $('bins').addEventListener('click', (e) => {
     const b = e.target.closest('.bin');
     if (!b || b.disabled || !g.running) return;
-    if (b.id === 'trash') { tray = { layers: [], drink: null }; showTray(); return; }
+    if (b.id === 'trash') { tray = { layers: [], drink: null, fries: false }; showTray(); return; }
     if (b.dataset.drink) { tray.drink = b.dataset.drink; showTray(); return; }
-    const add = b.dataset.add;
-    const L = tray.layers;
-    if (L[L.length - 1] === 'top') return toast('This burger is closed: serve it or trash it');
-    if (L.length >= MAX_LAYERS) return toast('The burger is too tall!');
-    if (add === 'bun') L.push(L.length ? 'top' : 'bun');
-    else { if (!L.length) L.push('bun'); L.push(add); }
-    showTray();
+    const it = byId[b.dataset.add];
+    if (it.kind === 'grill' || it.kind === 'fry') {
+      const list = it.kind === 'grill' ? grill : fryer;
+      const k = list.indexOf(null);
+      if (k < 0) return toast(it.kind === 'grill' ? 'The grill is full' : 'The fryer is full');
+      list[k] = { item: it.id, t: 0 };
+      drawStations();
+    } else if (it.id === 'hdbun') {
+      if (tray.layers.length) return toast('Start a hot dog on an empty plate');
+      tray.layers.push('hdbun');
+      showTray();
+    } else if (it.id === 'bun') {
+      const L = tray.layers;
+      if (L[L.length - 1] === 'top') return toast('This burger is closed: serve it or trash it');
+      L.push(L.length ? 'top' : 'bun');
+      showTray();
+    } else addLayer(it.id);
     b.classList.remove('pop'); void b.offsetWidth; b.classList.add('pop');
   });
 
-  cfg = burgerLevel(1); seats = [null, null, null]; tray = { layers: [], drink: null }; served = 0;
-  showStats(); showBins();
+  cfg = burgerLevel(1); seats = [null, null, null]; tray = { layers: [], drink: null, fries: false };
+  grill = Array(GRILL_SLOTS).fill(null); fryer = Array(FRYER_SLOTS).fill(null); served = 0;
+  showStats(); showBins(); showTray();
   overlay(`<h2>Open the shop</h2>
-    <p class="muted">Customers wait at the counter with their order. Tap the ingredients in the order shown (the bun goes first and last), add the drink if they want one, then tap the customer to serve.</p>
+    <p class="muted">Tap the patty, bacon or sausage to put it on the grill, and the fries to drop them in the fryer. Take them out when the needle is in the green: too late and they burn.</p>
+    <p class="muted">Stack the order in the bubble's order (the bun goes first and last), add fries and the drink, then tap the customer.</p>
     <p class="muted small">Each order gives ${perOrder} ${COIN} (today: ${earned}/${cap}). Three angry customers and the shop closes. Record: $${Number(state.me.burger_best ?? 0)}</p>
     <button class="btn primary" id="b-start" type="button">Open the shop</button>`);
   $('b-start').addEventListener('click', startLevel);
