@@ -629,6 +629,10 @@ function renderJeu() {
         <span class="game-art burger-art" aria-hidden="true">${stackHTML(['bun', 'patty', 'cheese', 'lettuce', 'top'])}</span>
         <span><b>Burger Shop</b><small class="muted">Grill the meat, fry the fries without burning them, build several orders at once and serve before the customers lose patience. Each order gives ${Number(state.settings?.burger_coins_per_order ?? 4)} ${COIN}, within the daily limit.</small></span>
       </a>
+      <a class="game-card" href="#/marbles">
+        <span class="game-art marbles-art" aria-hidden="true">${['#ff4d6d', '#3d8bff', '#3d8bff', '#ffc933', '#36c96a', '#a45cff'].map((c, i) => `<i style="--c:${c};left:${[6, 18, 31, 43, 50, 46][i]}px;top:${[44, 50, 47, 38, 25, 12][i]}px"></i>`).join('')}</span>
+        <span><b>Marbles</b><small class="muted">A chain of marbles rolls toward the hole: shoot to make three of the same color pop. Each level cleared gives ${Number(state.settings?.marbles_coins_per_level ?? 10)} ${COIN}, within the daily limit.</small></span>
+      </a>
       <a class="game-card" href="#/puzzle">
         <span class="game-art puzzle-art" aria-hidden="true">${[0, 1, 2, 3].map((i) => `<i class="pz${i}"></i>`).join('')}</span>
         <span><b>Puzzle</b><small class="muted">Put one of your photos back together. Each finished puzzle gives up to ${puzzleReward(5)} ${COIN}, within the same daily limit as Blocks.</small></span>
@@ -1659,6 +1663,561 @@ function renderBurger() {
   $('b-start').addEventListener('click', startLevel);
 }
 
+/* ---------- mini-jeu : Marbles (façon Zuma) ---------- */
+
+const MB_W = 360;
+const MB_H = 480;
+const MB_R = 11;
+const MB_D = MB_R * 2;
+const MB_SHOT = 720; // vitesse d'une bille tirée, en px/s
+const MB_BACK = 260; // vitesse à laquelle un morceau de chaîne revient quand les couleurs se touchent
+const MB_COLORS = [
+  ['#ff4d6d', '#ffd0da', '#9e1030'],
+  ['#3d8bff', '#cfe2ff', '#123f8f'],
+  ['#36c96a', '#cdf6da', '#13733a'],
+  ['#ffc933', '#fff4c7', '#a87800'],
+  ['#a45cff', '#e6d3ff', '#5418a3'],
+  ['#f4f2f8', '#ffffff', '#8b8798'],
+];
+const MB_POWERS = { slow: '🐢', back: '⏪', bomb: '💥' };
+
+function marblesLevel(n) {
+  return {
+    path: n % 2 ? 'spiral' : 'heart',
+    colors: n <= 2 ? 4 : n <= 5 ? 5 : 6,
+    total: Math.min(110, 34 + n * 6),
+    speed: Math.min(30, 10 + n * 1.6),
+    powers: n >= 2 ? 0.06 : 0.035,
+  };
+}
+
+// le chemin des billes, rééchantillonné tous les 1 px pour placer une bille à une distance donnée
+function marblesPath(kind) {
+  const N = 4000;
+  let pts = [];
+  let shooter = [180, 236];
+  const even = (list) => {
+    const out = [list[0]];
+    let acc = 0, next = 1, [px, py] = list[0];
+    for (let i = 1; i < list.length; i++) {
+      const [x, y] = list[i];
+      const seg = Math.hypot(x - px, y - py);
+      while (seg > 0 && acc + seg >= next) {
+        const f = (next - acc) / seg;
+        out.push([px + (x - px) * f, py + (y - py) * f]);
+        next++;
+      }
+      acc += seg; px = x; py = y;
+    }
+    return out;
+  };
+  // moyenne glissante pour arrondir la pointe et le creux du cœur
+  const smooth = (list, w) => list.map((_, i) => {
+    let sx = 0, sy = 0, n = 0;
+    for (let j = Math.max(0, i - w); j <= Math.min(list.length - 1, i + w); j++) { sx += list[j][0]; sy += list[j][1]; n++; }
+    return [sx / n, sy / n];
+  });
+  if (kind === 'heart') {
+    const t0 = 1.3 * Math.PI, t1 = 3.6 * Math.PI, k0 = 10.8, k1 = 5.6;
+    for (let i = 0; i <= N; i++) {
+      const u = i / N, t = t0 + u * (t1 - t0), k = k0 + (k1 - k0) * u;
+      const x = 16 * Math.sign(Math.sin(t)) * Math.sin(t) ** 2;
+      const y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
+      pts.push([180 + x * k, 232 - y * k * 1.18]);
+    }
+    pts = even(smooth(smooth(even(pts), 26), 26));
+    shooter = [180, 258];
+  } else {
+    for (let i = 0; i <= N; i++) {
+      const u = i / N, a = -Math.PI / 2 + u * 1.65 * 2 * Math.PI;
+      pts.push([180 + (162 - 82 * u) * Math.cos(a), 236 + (218 - 108 * u) * Math.sin(a)]);
+    }
+    pts = even(pts);
+  }
+  return { xs: Float32Array.from(pts, (p) => p[0]), ys: Float32Array.from(pts, (p) => p[1]), L: pts.length - 1, shooter };
+}
+
+const marblesAt = (P, s) => {
+  const v = Math.max(0, Math.min(P.L, s));
+  const i = Math.floor(v), j = Math.min(P.L, i + 1), f = v - i;
+  return [P.xs[i] + (P.xs[j] - P.xs[i]) * f, P.ys[i] + (P.ys[j] - P.ys[i]) * f];
+};
+
+function heartShape(ctx, s) { // pointe vers +y
+  ctx.beginPath();
+  ctx.moveTo(0, s * 0.95);
+  ctx.bezierCurveTo(-s * 1.25, s * 0.1, -s * 0.95, -s * 0.95, 0, -s * 0.38);
+  ctx.bezierCurveTo(s * 0.95, -s * 0.95, s * 1.25, s * 0.1, 0, s * 0.95);
+  ctx.closePath();
+}
+
+async function renderMarbles() {
+  const today = todayParis();
+  const cap = Number(state.settings?.games_daily_cap ?? 60);
+  let earned = state.me.game_coins_on === today ? Number(state.me.game_coins_today || 0) : 0;
+  const perLevel = Number(state.settings?.marbles_coins_per_level ?? 10);
+  const best = (p) => (Number(p?.marbles_best) ? String(p.marbles_best) : '—');
+  const other = partner();
+  let saved = 1;
+  try { saved = Number(localStorage.getItem('marblesLevel')) || 1; } catch { /* rien */ }
+  let level = Math.max(1, Math.min(saved, Number(state.me.marbles_best ?? 0) + 1));
+
+  $app.innerHTML = `
+    <section class="marbles-page">
+      <a class="back-link" href="#/jeu">← Games</a>
+      <header class="page-head">
+        <h1>Marbles</h1>
+        <p class="coins" id="coins">${Number(state.me.coins ?? 0)} ${COIN}</p>
+      </header>
+      <div class="mb-board" id="mb-board">
+        <div class="bbar">
+          <span>Level <b id="mb-level">${level}</b></span>
+          <b id="mb-score">0</b>
+          <span>Best <b id="mb-best">${best(state.me)}</b></span>
+          ${other ? `<span>${esc(other.display_name || 'Partner')} <b>${best(other)}</b></span>` : ''}
+        </div>
+        <canvas id="mb-canvas" width="${MB_W}" height="${MB_H}"></canvas>
+        <div class="mb-bar"><i id="mb-progress"></i></div>
+        <div class="b-overlay" id="mb-overlay"></div>
+      </div>
+      <p class="muted small">Touch the board to aim and let go to shoot. Tap the heart to swap the two marbles.</p>
+    </section>`;
+
+  const $ = (id) => document.getElementById(id);
+  const board = $('mb-board');
+  const canvas = $('mb-canvas');
+  const ctx = canvas.getContext('2d');
+  let scale = 1, sprites = [], bg = null;
+  let P, cfg, balls, shots, parts, floats, spawned, cleared, cur, nxt, angle, aiming, onShooter, reload;
+  let score, combo, slowT, backT, rushing, st = 'intro', raf = 0, last = 0, t0 = 0;
+
+  // une photo de vos cartes en fond, si vous en avez
+  const photos = puzzlePool();
+  if (photos.length) {
+    const card = pick(photos);
+    signedUrls([card.image_path]).then((url) => {
+      const u = url(card.image_path);
+      if (u && board.isConnected) board.style.setProperty('--photo', `url("${u.replace(/"/g, '%22')}")`);
+    });
+  }
+
+  const overlay = (html) => {
+    const o = $('mb-overlay');
+    o.innerHTML = html ? `<div class="panel b-panel">${html}</div>` : '';
+    o.classList.toggle('on', !!html);
+  };
+
+  // billes dessinées une fois par couleur, à la bonne résolution
+  const makeSprites = () => {
+    const px = Math.ceil(MB_D * scale) + 2;
+    sprites = MB_COLORS.map(([base, light, dark]) => {
+      const c = document.createElement('canvas');
+      c.width = c.height = px;
+      const g = c.getContext('2d');
+      g.scale(px / MB_D, px / MB_D);
+      const grad = g.createRadialGradient(MB_R * 0.65, MB_R * 0.6, MB_R * 0.1, MB_R, MB_R, MB_R);
+      grad.addColorStop(0, light);
+      grad.addColorStop(0.35, base);
+      grad.addColorStop(1, dark);
+      g.fillStyle = grad;
+      g.beginPath(); g.arc(MB_R, MB_R, MB_R - 0.4, 0, Math.PI * 2); g.fill();
+      g.fillStyle = 'rgba(255,255,255,.75)';
+      g.beginPath(); g.ellipse(MB_R * 0.68, MB_R * 0.55, MB_R * 0.28, MB_R * 0.18, -0.6, 0, Math.PI * 2); g.fill();
+      return c;
+    });
+  };
+
+  // le rail, l'entrée et le trou, dessinés une fois par niveau
+  const makeBg = () => {
+    bg = document.createElement('canvas');
+    bg.width = canvas.width; bg.height = canvas.height;
+    const g = bg.getContext('2d');
+    g.scale(scale, scale);
+    const trace = () => { g.beginPath(); g.moveTo(P.xs[0], P.ys[0]); for (let i = 4; i <= P.L; i += 4) g.lineTo(P.xs[i], P.ys[i]); g.lineTo(P.xs[P.L], P.ys[P.L]); };
+    g.lineCap = 'round'; g.lineJoin = 'round';
+    trace(); g.strokeStyle = 'rgba(10,4,14,.55)'; g.lineWidth = MB_D + 10; g.stroke();
+    trace(); g.strokeStyle = 'rgba(255,255,255,.07)'; g.lineWidth = MB_D + 2; g.stroke();
+    trace(); g.strokeStyle = 'rgba(255,255,255,.05)'; g.lineWidth = 2; g.setLineDash([2, 9]); g.stroke(); g.setLineDash([]);
+    const [sx, sy] = [P.xs[0], P.ys[0]];
+    g.fillStyle = '#140b18'; g.beginPath(); g.arc(sx, sy, MB_R + 6, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = 'rgba(255,255,255,.25)'; g.lineWidth = 2; g.stroke();
+  };
+
+  const resize = () => {
+    const w = canvas.clientWidth || MB_W;
+    const dpr = Math.min(3, window.devicePixelRatio || 1);
+    scale = (w * dpr) / MB_W;
+    canvas.width = Math.round(MB_W * scale);
+    canvas.height = Math.round(MB_H * scale);
+    makeSprites();
+    if (P) makeBg();
+  };
+
+  const present = () => [...new Set(balls.map((b) => b.c))];
+  const randColor = () => {
+    const pool = spawned >= cfg.total && balls.length ? present() : [...Array(cfg.colors).keys()];
+    return pick(pool);
+  };
+  const fixShooter = () => {
+    if (spawned < cfg.total || !balls.length) return;
+    const pool = present();
+    if (!pool.includes(cur)) cur = pick(pool);
+    if (!pool.includes(nxt)) nxt = pick(pool);
+  };
+  const newBall = (s) => {
+    const prev = balls[0];
+    let c;
+    // des suites de 1 ou 2 couleurs, jamais 3 identiques d'entrée
+    if (prev && Math.random() < 0.38 && !(balls[1] && balls[1].c === prev.c)) c = prev.c;
+    else { do c = Math.floor(Math.random() * cfg.colors); while (prev && c === prev.c && cfg.colors > 1); }
+    const pw = spawned > 6 && Math.random() < cfg.powers ? pick(Object.keys(MB_POWERS)) : null;
+    return { c, s, pw };
+  };
+
+  const showStats = () => {
+    $('mb-level').textContent = level;
+    $('mb-score').textContent = score;
+    $('mb-progress').style.width = `${Math.min(100, (cleared / cfg.total) * 100)}%`;
+  };
+
+  const startLevel = () => {
+    cfg = marblesLevel(level);
+    P = marblesPath(cfg.path);
+    resize();
+    balls = []; shots = []; parts = []; floats = [];
+    spawned = 0; cleared = 0; score = 0; combo = 0; slowT = 0; backT = 0; reload = 0;
+    rushing = true; aiming = false;
+    angle = -Math.PI / 2;
+    cur = Math.floor(Math.random() * cfg.colors); nxt = Math.floor(Math.random() * cfg.colors);
+    st = 'play';
+    t0 = performance.now();
+    try { localStorage.setItem('marblesLevel', String(level)); } catch { /* rien */ }
+    overlay('');
+    showStats();
+    last = performance.now();
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(frame);
+  };
+
+  const pop = (removed) => {
+    const n = removed.length;
+    const gain = n * 10 * Math.max(1, combo);
+    score += gain;
+    cleared += n;
+    let sx = 0, sy = 0;
+    for (const b of removed) {
+      const [x, y] = marblesAt(P, b.s);
+      sx += x; sy += y;
+      for (let k = 0; k < 5; k++) {
+        const a = Math.random() * Math.PI * 2, v = 40 + Math.random() * 90;
+        parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, t: 0.45, c: b.c });
+      }
+    }
+    floats.push({ x: sx / n, y: sy / n, t: 1, text: `+${gain}${combo > 1 ? `  ×${combo}` : ''}` });
+    for (const b of removed) if (b.pw) power(b.pw, b);
+    showStats();
+    fixShooter();
+  };
+
+  function power(kind, b) {
+    const [x, y] = marblesAt(P, b.s);
+    floats.push({ x, y: y - 16, t: 1.2, text: MB_POWERS[kind] });
+    if (kind === 'slow') slowT = 6;
+    else if (kind === 'back') backT = 2.5;
+    else {
+      const near = balls.filter((o) => {
+        if (o.s < -MB_R) return false;
+        const [ox, oy] = marblesAt(P, o.s);
+        return Math.hypot(ox - x, oy - y) < 62;
+      });
+      if (near.length) { balls = balls.filter((o) => !near.includes(o)); pop(near); }
+    }
+  }
+
+  // groupe de même couleur collé autour de la bille i ; 3 ou plus disparaissent
+  const matchAt = (i) => {
+    const c = balls[i].c;
+    let a = i, b = i;
+    while (a > 0 && balls[a - 1].c === c && balls[a].s - balls[a - 1].s <= MB_D + 0.6) a--;
+    while (b < balls.length - 1 && balls[b + 1].c === c && balls[b + 1].s - balls[b].s <= MB_D + 0.6) b++;
+    if (b - a + 1 < 3) return false;
+    combo++;
+    pop(balls.splice(a, b - a + 1));
+    return true;
+  };
+
+  const insertShot = (sh, j) => {
+    const b = balls[j];
+    const [ax, ay] = marblesAt(P, b.s + MB_R);
+    const [bx, by] = marblesAt(P, b.s - MB_R);
+    const ahead = (sh.x - ax) ** 2 + (sh.y - ay) ** 2 < (sh.x - bx) ** 2 + (sh.y - by) ** 2;
+    const nb = { c: sh.c, s: ahead ? b.s + MB_D : b.s, ix: sh.x, iy: sh.y, it: 0.12, chk: true };
+    balls.splice(ahead ? j + 1 : j, 0, nb);
+    combo = 0;
+  };
+
+  const fire = () => {
+    if (st !== 'play' || reload > 0 || shots.length >= 2) return;
+    const [x, y] = P.shooter;
+    shots.push({ x: x + Math.cos(angle) * 26, y: y + Math.sin(angle) * 26, vx: Math.cos(angle) * MB_SHOT, vy: Math.sin(angle) * MB_SHOT, c: cur });
+    cur = nxt;
+    nxt = randColor();
+    reload = 0.16;
+  };
+
+  const win = () => {
+    st = 'won';
+    const secs = Math.round((performance.now() - t0) / 1000);
+    overlay(`<h2>Level ${level} cleared!</h2><p>Score ${score} · ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}</p><p class="muted small" id="mb-gain">…</p><button class="btn primary" id="mb-next" type="button">Next level</button>`);
+    const done = level;
+    $('mb-next').addEventListener('click', () => { level = done + 1; startLevel(); });
+    try { localStorage.setItem('marblesLevel', String(done + 1)); } catch { /* rien */ }
+    sb.rpc('marbles_level', { level: done }).then(({ data, error }) => {
+      const el = $('mb-gain');
+      if (error || !data) { if (el) el.textContent = ''; return; }
+      state.me.coins = data.coins;
+      state.me.game_coins_on = today;
+      state.me.game_coins_today = data.today;
+      state.me.marbles_best = data.best;
+      earned = data.today;
+      if ($('coins')) $('coins').textContent = `${data.coins} ${COIN}`;
+      if ($('mb-best')) $('mb-best').textContent = best(state.me);
+      if (el) el.textContent = data.gain ? `+${data.gain} ${COIN} (today: ${data.today}/${data.cap})` : data.today >= data.cap ? 'Daily coin limit reached' : '';
+    });
+  };
+  const lose = () => {
+    st = 'lost';
+    overlay(`<h2>The marbles reached the hole</h2><p>Level ${level} · Score ${score}</p><button class="btn primary" id="mb-retry" type="button">Try again</button>`);
+    $('mb-retry').addEventListener('click', startLevel);
+  };
+
+  function update(dt) {
+    reload -= dt;
+    slowT = Math.max(0, slowT - dt);
+    backT = Math.max(0, backT - dt);
+    parts = parts.filter((p) => (p.t -= dt) > 0);
+    parts.forEach((p) => { p.x += p.vx * dt; p.y += p.vy * dt; });
+    floats = floats.filter((f) => (f.t -= dt) > 0);
+
+    if (st === 'sinking') {
+      balls.forEach((b) => { b.s += 520 * dt; });
+      balls = balls.filter((b) => b.s < P.L + MB_R);
+      if (!balls.length) lose();
+      return;
+    }
+    if (st !== 'play') return;
+
+    // nouvelles billes qui sortent de l'entrée
+    while (spawned < cfg.total && (!balls.length || balls[0].s >= 0)) {
+      const s0 = balls.length ? balls[0].s : MB_D;
+      balls.unshift(newBall(s0 < MB_D ? s0 - MB_D : -MB_D));
+      spawned++;
+    }
+
+    // tirs en vol
+    for (const sh of shots) {
+      const steps = Math.ceil((MB_SHOT * dt) / 6);
+      for (let k = 0; k < steps && !sh.done; k++) {
+        sh.x += (sh.vx * dt) / steps; sh.y += (sh.vy * dt) / steps;
+        if (sh.x < -30 || sh.x > MB_W + 30 || sh.y < -30 || sh.y > MB_H + 30) { sh.done = true; break; }
+        for (let j = 0; j < balls.length; j++) {
+          if (balls[j].s < -MB_R) continue;
+          const [x, y] = marblesAt(P, balls[j].s);
+          if ((x - sh.x) ** 2 + (y - sh.y) ** 2 < (MB_D * 0.92) ** 2) { insertShot(sh, j); sh.done = true; break; }
+        }
+      }
+    }
+    shots = shots.filter((sh) => !sh.done);
+
+    // la chaîne avance : le morceau du fond pousse, les autres attendent ou reviennent vers une même couleur
+    const n = balls.length;
+    for (let i = 0; i < n; i++) balls[i].gb = i > 0 && balls[i].s - balls[i - 1].s > MB_D + 0.5;
+    const head = n ? balls[n - 1].s : 0;
+    if (rushing && head > P.L * 0.22) rushing = false;
+    let fwd = rushing ? 340 : cfg.speed * (slowT > 0 ? 0.35 : 1) * (head > P.L * 0.78 ? 0.55 : 1);
+    if (backT > 0) fwd = -Math.max(70, cfg.speed * 3);
+    let a = 0;
+    for (let i = 1; i <= n; i++) {
+      if (i === n || balls[i].gb) {
+        const mv = a === 0 ? fwd * dt : balls[a].c === balls[a - 1].c ? -MB_BACK * dt : 0;
+        for (let j = a; j < i; j++) balls[j].s += mv;
+        a = i;
+      }
+    }
+    const joins = [];
+    for (let i = 1; i < n; i++) {
+      if (balls[i].s < balls[i - 1].s + MB_D) {
+        if (balls[i].gb) joins.push(balls[i]);
+        balls[i].s = balls[i - 1].s + MB_D;
+      }
+    }
+    for (const b of joins) {
+      const i = balls.indexOf(b);
+      if (i > 0 && balls[i - 1].c === b.c) matchAt(i);
+    }
+    // une bille tirée qui vient de se poser
+    for (const b of balls) if (b.it > 0) b.it -= dt;
+    const landed = balls.find((b) => b.chk && !(b.it > 0));
+    if (landed) { landed.chk = false; matchAt(balls.indexOf(landed)); }
+
+    if (balls.length && balls[balls.length - 1].s >= P.L) { st = 'sinking'; shots = []; aiming = false; return; }
+    if (spawned >= cfg.total && !balls.length) win();
+  }
+
+  // premier obstacle sur la ligne de visée
+  const aimEnd = () => {
+    const [x0, y0] = P.shooter;
+    const dx = Math.cos(angle), dy = Math.sin(angle);
+    for (let d = 26; d < 640; d += 7) {
+      const x = x0 + dx * d, y = y0 + dy * d;
+      if (x < 0 || x > MB_W || y < 0 || y > MB_H) return [x, y];
+      for (const b of balls) {
+        if (b.s < 0) continue;
+        const [bx, by] = marblesAt(P, b.s);
+        if ((bx - x) ** 2 + (by - y) ** 2 < MB_D * MB_D * 0.85) return [x, y];
+      }
+    }
+    return [x0 + dx * 640, y0 + dy * 640];
+  };
+
+  const ball = (c, x, y, r = MB_R) => ctx.drawImage(sprites[c], x - r, y - r, r * 2, r * 2);
+
+  function draw() {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (bg) ctx.drawImage(bg, 0, 0);
+    ctx.setTransform(scale, 0, 0, scale, 0, 0);
+    if (!P) return;
+
+    // le trou, rouge quand la chaîne approche
+    const head = balls.length ? balls[balls.length - 1].s / P.L : 0;
+    const [hx, hy] = [P.xs[P.L], P.ys[P.L]];
+    const danger = Math.max(0, (head - 0.7) / 0.3);
+    if (danger > 0) {
+      const glow = ctx.createRadialGradient(hx, hy, 6, hx, hy, 40);
+      glow.addColorStop(0, `rgba(255,60,90,${0.65 * danger * (0.75 + 0.25 * Math.sin(performance.now() / 120))})`);
+      glow.addColorStop(1, 'rgba(255,60,90,0)');
+      ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(hx, hy, 40, 0, Math.PI * 2); ctx.fill();
+    }
+    const hole = ctx.createRadialGradient(hx, hy, 2, hx, hy, MB_R + 8);
+    hole.addColorStop(0, '#000'); hole.addColorStop(0.75, '#1d0d22'); hole.addColorStop(1, '#ff6f9c');
+    ctx.fillStyle = hole; ctx.beginPath(); ctx.arc(hx, hy, MB_R + 8, 0, Math.PI * 2); ctx.fill();
+
+    ctx.font = '11px system-ui, sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (const b of balls) {
+      if (b.s < -MB_R + 2) continue;
+      let [x, y] = marblesAt(P, Math.min(b.s, P.L));
+      if (b.it > 0) { const f = b.it / 0.12; x += (b.ix - x) * f; y += (b.iy - y) * f; }
+      ball(b.c, x, y);
+      if (b.pw) ctx.fillText(MB_POWERS[b.pw], x, y + 0.5);
+    }
+    for (const sh of shots) ball(sh.c, sh.x, sh.y);
+
+    // lanceur en forme de cœur, la pointe vers la cible
+    const [sx, sy] = P.shooter;
+    if (aiming && st === 'play' && !onShooter) {
+      const [ex, ey] = aimEnd();
+      ctx.save();
+      ctx.strokeStyle = MB_COLORS[cur][0]; ctx.globalAlpha = 0.55; ctx.lineWidth = 2; ctx.setLineDash([3, 7]);
+      ctx.beginPath(); ctx.moveTo(sx + Math.cos(angle) * 36, sy + Math.sin(angle) * 36); ctx.lineTo(ex, ey); ctx.stroke();
+      ctx.restore();
+    }
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.rotate(angle - Math.PI / 2);
+    ctx.shadowColor = 'rgba(0,0,0,.45)'; ctx.shadowBlur = 8; ctx.shadowOffsetY = 3;
+    const hg = ctx.createLinearGradient(0, -24, 0, 24);
+    hg.addColorStop(0, '#ff9ab8'); hg.addColorStop(1, '#c2346b');
+    ctx.fillStyle = hg; heartShape(ctx, 24); ctx.fill();
+    ctx.shadowColor = 'transparent';
+    ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.restore();
+    if (st === 'play' || st === 'intro') {
+      ball(cur, sx + Math.cos(angle) * 26, sy + Math.sin(angle) * 26);
+      ball(nxt, sx - Math.cos(angle) * 3, sy - Math.sin(angle) * 3, 6.5);
+    }
+
+    for (const p of parts) {
+      ctx.globalAlpha = Math.min(1, p.t / 0.3);
+      ctx.fillStyle = MB_COLORS[p.c][0];
+      ctx.beginPath(); ctx.arc(p.x, p.y, 2.6, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    ctx.font = '700 15px "DM Sans", system-ui, sans-serif';
+    for (const f of floats) {
+      ctx.globalAlpha = Math.min(1, f.t / 0.5);
+      ctx.fillStyle = '#fff'; ctx.strokeStyle = 'rgba(20,10,25,.8)'; ctx.lineWidth = 3;
+      const y = f.y - (1 - f.t) * 26;
+      ctx.strokeText(f.text, f.x, y); ctx.fillText(f.text, f.x, y);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function frame(now) {
+    if (!canvas.isConnected) return;
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    if (!document.hidden) update(dt);
+    draw();
+    raf = requestAnimationFrame(frame);
+  }
+
+  // visée au doigt ou à la souris
+  const local = (e) => {
+    const r = canvas.getBoundingClientRect();
+    return [((e.clientX - r.left) * MB_W) / r.width, ((e.clientY - r.top) * MB_H) / r.height];
+  };
+  const nearShooter = ([x, y]) => P && Math.hypot(x - P.shooter[0], y - P.shooter[1]) < 30;
+  const aimAt = (pt) => { if (!nearShooter(pt)) angle = Math.atan2(pt[1] - P.shooter[1], pt[0] - P.shooter[0]); };
+  canvas.addEventListener('pointerdown', (e) => {
+    if (st !== 'play' || !e.isPrimary) return;
+    e.preventDefault();
+    const pt = local(e);
+    aiming = true;
+    onShooter = nearShooter(pt);
+    try { canvas.setPointerCapture(e.pointerId); } catch { /* rien */ }
+    aimAt(pt);
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (st !== 'play' || (!aiming && e.pointerType !== 'mouse')) return;
+    const pt = local(e);
+    if (onShooter && !nearShooter(pt)) onShooter = false;
+    aimAt(pt);
+  });
+  canvas.addEventListener('pointerup', (e) => {
+    if (!aiming) return;
+    aiming = false;
+    const pt = local(e);
+    if (onShooter && nearShooter(pt)) { [cur, nxt] = [nxt, cur]; onShooter = false; return; }
+    onShooter = false;
+    aimAt(pt);
+    fire();
+  });
+  canvas.addEventListener('pointercancel', () => { aiming = false; onShooter = false; });
+  canvas.mbState = () => ({ st, level, score, spawned, total: cfg.total, cur, nxt, shooter: P.shooter, balls: balls.map((b) => ({ c: b.c, s: b.s, pos: marblesAt(P, b.s) })) }); // pour les tests
+  window.addEventListener('resize', function onResize() {
+    if (!canvas.isConnected) { window.removeEventListener('resize', onResize); return; }
+    resize();
+  });
+
+  // écran d'accueil avec le chemin du niveau en fond
+  cfg = marblesLevel(level);
+  P = marblesPath(cfg.path);
+  balls = []; shots = []; parts = []; floats = []; spawned = 0; cleared = 0; score = 0;
+  angle = -Math.PI / 2; cur = 0; nxt = 1;
+  resize();
+  showStats();
+  draw();
+  overlay(`<h2>Level ${level}</h2>
+    <p class="muted">A chain of marbles rolls toward the hole. Shoot marbles into it: three or more of the same color pop. Don't let the chain reach the hole!</p>
+    <p class="muted small">Some marbles carry a bonus: ${MB_POWERS.slow} slows the chain, ${MB_POWERS.back} pushes it back, ${MB_POWERS.bomb} blows up its neighbours. Each level cleared gives ${perLevel} ${COIN} (today: ${earned}/${cap}).</p>
+    <button class="btn primary" id="mb-start" type="button">Play level ${level}</button>
+    ${level > 1 ? '<button class="btn ghost" id="mb-restart" type="button">Start again from level 1</button>' : ''}`);
+  $('mb-start').addEventListener('click', startLevel);
+  $('mb-restart')?.addEventListener('click', () => { level = 1; startLevel(); });
+}
+
 /* ---------- profil ---------- */
 
 function renderProfil() {
@@ -1691,6 +2250,7 @@ function renderProfil() {
           <label>Blocks: coins per line<span class="pct"><input name="blocks_coins_per_line" type="number" inputmode="numeric" min="0" step="1" value="${Number(state.settings?.blocks_coins_per_line ?? 3)}">${COIN}</span></label>
           <label>Puzzle: coins per piece<span class="pct"><input name="puzzle_coins_per_piece" type="number" inputmode="numeric" min="0" step="1" value="${Number(state.settings?.puzzle_coins_per_piece ?? 2)}">${COIN}</span></label>
           <label>Burger Shop: coins per order<span class="pct"><input name="burger_coins_per_order" type="number" inputmode="numeric" min="0" step="1" value="${Number(state.settings?.burger_coins_per_order ?? 4)}">${COIN}</span></label>
+          <label>Marbles: coins per level<span class="pct"><input name="marbles_coins_per_level" type="number" inputmode="numeric" min="0" step="1" value="${Number(state.settings?.marbles_coins_per_level ?? 10)}">${COIN}</span></label>
           <label>Daily coin limit for games<span class="pct"><input name="games_daily_cap" type="number" inputmode="numeric" min="0" step="1" value="${Number(state.settings?.games_daily_cap ?? 60)}">${COIN}</span></label>
         </div>
         <button class="btn" type="submit">Save settings</button>
@@ -1737,7 +2297,7 @@ function renderProfil() {
     if (Math.round(rateSum() * 100) / 100 !== 100) return toast('The rarity rates must add up to 100%', 'err');
     const patch = { updated_at: new Date().toISOString() };
     for (const k of [...RARITIES.map((r) => `rate_${r.id}`), 'holo_chance', 'gold_chance', 'cooldown_hours']) patch[k] = Number(ratesForm[k].value);
-    for (const k of ['pack_price', 'max_stored_packs', 'blocks_coins_per_line', 'puzzle_coins_per_piece', 'burger_coins_per_order', 'games_daily_cap', ...RARITIES.map((r) => `coins_${r.id}`)]) patch[k] = Math.round(Number(ratesForm[k].value));
+    for (const k of ['pack_price', 'max_stored_packs', 'blocks_coins_per_line', 'puzzle_coins_per_piece', 'burger_coins_per_order', 'marbles_coins_per_level', 'games_daily_cap', ...RARITIES.map((r) => `coins_${r.id}`)]) patch[k] = Math.round(Number(ratesForm[k].value));
     const { data, error } = await sb.from('game_settings').update(patch).eq('id', 1).select().maybeSingle();
     if (error) return toast(error.message, 'err');
     if (data) state.settings = data;
@@ -1747,7 +2307,7 @@ function renderProfil() {
 
 /* ---------- routeur ---------- */
 
-const routes = { booster: renderBooster, collection: renderCollection, jeu: renderJeu, blocks: renderBlocks, memory: renderMemory, puzzle: renderPuzzle, burger: renderBurger, ajouter: renderAjouter, profil: renderProfil };
+const routes = { booster: renderBooster, collection: renderCollection, jeu: renderJeu, blocks: renderBlocks, memory: renderMemory, puzzle: renderPuzzle, burger: renderBurger, marbles: renderMarbles, ajouter: renderAjouter, profil: renderProfil };
 
 async function route() {
   clearInterval(state.timer);
@@ -1755,7 +2315,7 @@ async function route() {
   const name = (location.hash.replace(/^#\/?/, '') || 'booster').split('?')[0];
   const page = routes[name] ? name : 'booster';
   $nav.hidden = false;
-  const tab = ['blocks', 'memory', 'puzzle', 'burger'].includes(page) ? 'jeu' : page;
+  const tab = ['blocks', 'memory', 'puzzle', 'burger', 'marbles'].includes(page) ? 'jeu' : page;
   $nav.querySelectorAll('a').forEach((a) => a.classList.toggle('active', a.dataset.route === tab));
   try {
     await routes[page]();

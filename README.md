@@ -38,10 +38,11 @@ Chaque doublon rapporte des pièces (Commune 5, Peu commune 10, Rare 25, Épique
 
 - **Blocks** : on glisse des formes sur une grille 8×8, chaque ligne ou colonne pleine disparaît. Chaque ligne rapporte 3 pièces (`blocks_lines()`), jusqu'à 300 pièces par jour. La partie est gardée dans le téléphone si on quitte la page.
 - **Burger Shop** : des clients attendent au comptoir avec leur commande. Le steak, le bacon et les saucisses cuisent sur le grill et les frites dans la friteuse : il faut les sortir quand l'aiguille est dans le vert, sinon ils brûlent et partent à la poubelle (−2 $). Il y a 3 assiettes pour préparer plusieurs commandes à la fois : on glisse un pain sur une assiette, puis chaque ingrédient sur ce pain dans l'ordre de la bulle (burger ou hot-dog), on ajoute frites et boisson, puis on glisse l'assiette sur le client (ou à la poubelle). Chaque commande servie rapporte 4 pièces (`burger_serve()`), dans le même plafond du jour ; 3 clients fâchés et la boutique ferme.
+- **Marbles** : un jeu à la Zuma. Une chaîne de billes roule vers le trou (sur une spirale ou un cœur, selon le niveau) ; on tire depuis le cœur au centre, et 3 billes de la même couleur ou plus disparaissent. Certaines billes donnent un bonus : ralentir, reculer ou exploser. Chaque niveau réussi rapporte 10 pièces (`marbles_level()`), dans le même plafond du jour ; le meilleur niveau est gardé dans `profiles.marbles_best`.
 - **Puzzle** : une photo de vos cartes découpée en 3×3, 4×4 ou 5×5 morceaux à remettre en place en les échangeant. Un puzzle fini rapporte 2 pièces par morceau (`claim_puzzle()`), dans le même plafond du jour que Blocks.
 - **Memory** : 6 paires de vos cartes. La première partie du jour rapporte jusqu'à 50 pièces selon le nombre de coups (`claim_memory()`).
 
-Le gain par ligne, par morceau, par commande et le plafond du jour se règlent dans Profile → Game settings.
+Le gain par ligne, par morceau, par commande, par niveau de billes et le plafond du jour se règlent dans Profile → Game settings.
 
 ## Mettre en ligne sur Vercel
 

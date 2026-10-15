@@ -754,3 +754,18 @@ input:focus, select:focus { outline: 2px solid var(--rose); outline-offset: 1px;
 .fries { position: relative; display: inline-block; flex: none; width: 2.4em; height: 3em; }
 .fries::before { content: ""; position: absolute; left: .3em; right: .3em; top: 0; height: 1.7em; background: repeating-linear-gradient(90deg, #ffcf3d 0 .3em, transparent .3em .45em); border-radius: .15em .15em 0 0; }
 .fries::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1.8em; background: linear-gradient(#ef3b35, #c4211f); clip-path: polygon(0 0, 100% 0, 86% 100%, 14% 100%); }
+
+/* ---------- Marbles ---------- */
+.marbles-art { position: relative; display: block; padding: 0; }
+.marbles-art i { position: absolute; width: 17px; height: 17px; border-radius: 50%; background: radial-gradient(circle at 34% 32%, rgba(255,255,255,.85) 0 14%, transparent 16%), radial-gradient(circle at 40% 38%, color-mix(in srgb, var(--c) 55%, #fff), var(--c) 45%, color-mix(in srgb, var(--c) 60%, #000)); }
+.mb-board .bbar #mb-score { color: var(--gold); }
+.mb-board .bbar span { white-space: nowrap; }
+.mb-board {
+  position: relative; border-radius: 18px; overflow: hidden; border: 1px solid var(--line);
+  background: linear-gradient(rgba(24,12,30,.8), rgba(18,9,24,.9)), var(--photo, linear-gradient(#3a2142, #1a0e20)) center / cover;
+  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+}
+.mb-board canvas { display: block; width: 100%; height: auto; touch-action: none; cursor: crosshair; }
+.mb-bar { position: absolute; left: 14px; right: 14px; bottom: 9px; height: 5px; border-radius: 3px; background: rgba(255,255,255,.12); overflow: hidden; pointer-events: none; }
+.mb-bar i { display: block; height: 100%; width: 0; border-radius: 3px; background: linear-gradient(90deg, var(--rose), var(--gold)); transition: width .3s; }
+.marbles-page > .small { margin-top: 10px; }
