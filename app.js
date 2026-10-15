@@ -675,12 +675,12 @@ async function startMemory(pool) {
   const startBtn = document.getElementById('start');
   startBtn.hidden = true;
   board.innerHTML = deck.map(({ c }, k) => `
-    <button class="tile r-${c.rarity}" data-k="${k}" data-id="${c.id}" aria-label="Hidden card">
-      <span class="tile-inner">
-        <span class="tile-back">${backHTML()}</span>
-        <span class="tile-front">${c.image_path && url(c.image_path) ? `<img src="${esc(url(c.image_path))}" alt="" draggable="false">` : `<span class="placeholder">${esc(firstEmoji(c.description))}</span>`}</span>
-      </span>
-    </button>`).join('');
+    <div class="tile r-${c.rarity}" role="button" tabindex="0" data-k="${k}" data-id="${c.id}" aria-label="Hidden card">
+      <div class="tile-inner">
+        <div class="tile-back">${backHTML()}</div>
+        <div class="tile-front"><div class="tile-pic">${c.image_path && url(c.image_path) ? `<img src="${esc(url(c.image_path))}" alt="" draggable="false">` : `<span class="placeholder">${esc(firstEmoji(c.description))}</span>`}</div></div>
+      </div>
+    </div>`).join('');
 
   let first = null, lock = false, moves = 0, found = 0;
   const t0 = Date.now();
@@ -711,6 +711,9 @@ async function startMemory(pool) {
     first = null;
     setTimeout(() => { a.classList.remove('up'); tile.classList.remove('up'); lock = false; }, 850);
   }));
+  board.addEventListener('keydown', (e) => {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.classList.contains('tile')) { e.preventDefault(); e.target.click(); }
+  });
 }
 
 async function finishMemory(moves, seconds) {

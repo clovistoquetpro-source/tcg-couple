@@ -467,21 +467,31 @@ input:focus, select:focus { outline: 2px solid var(--rose); outline-offset: 1px;
 .scores b { font-family: var(--font-title); font-size: 1.2rem; }
 .memory-bar { display: flex; justify-content: space-between; font-weight: 700; font-variant-numeric: tabular-nums; margin-bottom: 10px; color: var(--muted); }
 .memory { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; max-width: 520px; margin: 0 auto; }
-.tile { border: 0; padding: 0; background: none; cursor: pointer; perspective: 700px; aspect-ratio: 63 / 88; }
-.tile-inner { position: relative; display: block; width: 100%; height: 100%; transition: transform .45s cubic-bezier(.3,1.3,.5,1); transform-style: preserve-3d; }
+.tile {
+  position: relative; display: block; aspect-ratio: 63 / 88; perspective: 700px; cursor: pointer;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent; outline: none;
+}
+.tile:focus-visible { outline: 2px solid var(--rose); outline-offset: 3px; border-radius: 10px; }
+/* tout en absolu : Safari ne donne pas toujours une hauteur aux enfants en pourcentage */
+.tile-inner {
+  position: absolute; inset: 0; display: block; transition: transform .45s cubic-bezier(.3,1.3,.5,1);
+  -webkit-transform-style: preserve-3d; transform-style: preserve-3d;
+}
 .tile.up .tile-inner { transform: rotateY(180deg); }
-.tile-back, .tile-front { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.tile-back, .tile-front { position: absolute; inset: 0; display: block; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.tile-back { transform: rotateY(0deg); }
 .tile-back .card-back { height: 100%; border-radius: 10px; padding: 4px; }
 .tile-back .card-back .emblem { border-radius: 7px; }
-.tile-front { transform: rotateY(180deg); border-radius: 10px; overflow: hidden; border: 3px solid var(--rc); background: var(--bg2); }
-.tile-front img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.tile-front .placeholder { font-size: 2rem; }
+.tile-front { transform: rotateY(180deg); }
+.tile-pic { position: absolute; inset: 0; display: grid; place-items: center; border-radius: 10px; overflow: hidden; border: 3px solid var(--rc); background: var(--bg2); }
+.tile-pic img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.tile-pic .placeholder { font-size: 2rem; }
 .tile.r-commune { --rc: var(--c-commune); }
 .tile.r-peu_commune { --rc: var(--c-peu_commune); }
 .tile.r-rare { --rc: var(--c-rare); }
 .tile.r-epique { --rc: var(--c-epique); }
 .tile.r-legendaire { --rc: var(--c-legendaire); }
-.tile.matched .tile-front { box-shadow: 0 0 0 2px var(--gold), 0 0 16px rgba(245,196,107,.6); }
+.tile.matched .tile-pic { box-shadow: 0 0 0 2px var(--gold), 0 0 16px rgba(245,196,107,.6); }
 .tile.matched { animation: pop .4s ease; }
 @keyframes pop { 50% { transform: scale(1.06); } }
 .memory-done { margin-top: 16px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 6px; }
@@ -663,7 +673,7 @@ input:focus, select:focus { outline: 2px solid var(--rose); outline-offset: 1px;
 .tside.off { border: 1.5px dashed var(--line); opacity: .7; }
 .tside .cup, .tside .fries { font-size: 8.5px; }
 .btray.over { border-color: var(--rose); background: rgba(255,111,156,.14); }
-.btray.pop { animation: pop .18s ease; }
+.btray.pop { animation: bpop .18s ease; }
 .seat.over .bubble { box-shadow: 0 0 0 3px #52c98f, 0 3px 8px rgba(80,30,10,.2); }
 .seat.over .face { transform: scale(1.12); }
 .grill.over, .fryer.over { box-shadow: 0 0 0 3px var(--rose); }
@@ -688,8 +698,8 @@ input:focus, select:focus { outline: 2px solid var(--rose); outline-offset: 1px;
 }
 .bin small { white-space: nowrap; }
 .bin:active, .bin.pop { transform: scale(.94); }
-.bin.pop { animation: pop .18s ease; }
-@keyframes pop { 50% { transform: scale(.9); } }
+.bin.pop { animation: bpop .18s ease; }
+@keyframes bpop { 50% { transform: scale(.9); } }
 .bin .bin-art { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 22px; }
 .bin .bin-art .bstack { font-size: 4.2px; }
 .bin.drink .bin-art .cup, .bin .bin-art .fries { font-size: 8.5px; }
