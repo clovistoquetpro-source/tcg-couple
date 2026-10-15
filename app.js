@@ -2560,21 +2560,21 @@ function spotEdit(ctx, base, d, k) {
   if (d.kind === 'mirror') { c.translate(2 * d.x, 0); c.scale(-1, 1); all(); }
   else if (d.kind === 'flip') { c.translate(0, 2 * d.y); c.scale(1, -1); all(); }
   else if (d.kind === 'turn') { c.translate(d.x, d.y); c.rotate(Math.PI / 2); c.translate(-d.x, -d.y); all(); }
-  else if (d.kind === 'zoom') { c.translate(d.x, d.y); c.scale(1.35, 1.35); c.translate(-d.x, -d.y); all(); }
+  else if (d.kind === 'zoom') { c.translate(d.x, d.y); c.scale(1.6, 1.6); c.translate(-d.x, -d.y); all(); }
   else if (d.kind === 'clone' || d.kind === 'erase') { c.translate(d.x - d.sx, d.y - d.sy); all(); }
   else {
     all();
     if (d.kind === 'tint') {
       c.globalCompositeOperation = 'color';
-      c.globalAlpha = 0.35;
-      c.fillStyle = `hsl(${d.hue} 90% 50%)`;
+      c.globalAlpha = 0.6;
+      c.fillStyle = `hsl(${d.hue} 95% 50%)`;
     } else {
-      c.fillStyle = d.dark ? 'rgba(0,0,0,.25)' : 'rgba(255,255,255,.25)';
+      c.fillStyle = d.dark ? 'rgba(0,0,0,.42)' : 'rgba(255,255,255,.42)';
     }
     c.fillRect(d.x - d.r * 1.3, d.y - d.r * 1.3, d.r * 2.6, d.r * 2.6);
   }
   c.restore();
-  const g = c.createRadialGradient(d.x, d.y, d.r * 0.45, d.x, d.y, d.r * 1.15);
+  const g = c.createRadialGradient(d.x, d.y, d.r * 0.7, d.x, d.y, d.r * 1.1);
   g.addColorStop(0, '#000');
   g.addColorStop(1, 'rgba(0,0,0,0)');
   c.globalCompositeOperation = 'destination-in';
