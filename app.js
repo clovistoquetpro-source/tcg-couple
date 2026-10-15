@@ -633,6 +633,10 @@ function renderJeu() {
         <span class="game-art marbles-art" aria-hidden="true">${['#ff4d6d', '#3d8bff', '#3d8bff', '#ffc933', '#36c96a', '#a45cff'].map((c, i) => `<i style="--c:${c};left:${[6, 18, 31, 43, 50, 46][i]}px;top:${[44, 50, 47, 38, 25, 12][i]}px"></i>`).join('')}</span>
         <span><b>Marbles</b><small class="muted">A chain of marbles rolls toward the hole: shoot to make three of the same color pop. Each level cleared gives ${Number(state.settings?.marbles_coins_per_level ?? 10)} ${COIN}, within the daily limit.</small></span>
       </a>
+      <a class="game-card" href="#/merge">
+        <span class="game-art merge-art" aria-hidden="true"><i>2</i><i>4</i><i>8</i><i>16</i></span>
+        <span><b>2048 Cards</b><small class="muted">Slide your cards and merge equal ones, from Common up to Gold. From 128, each new card gives ${COIN}, within the daily limit.</small></span>
+      </a>
       <a class="game-card" href="#/puzzle">
         <span class="game-art puzzle-art" aria-hidden="true">${[0, 1, 2, 3].map((i) => `<i class="pz${i}"></i>`).join('')}</span>
         <span><b>Puzzle</b><small class="muted">Put one of your photos back together. Each finished puzzle gives up to ${puzzleReward(5)} ${COIN}, within the same daily limit as Blocks.</small></span>
@@ -2218,6 +2222,253 @@ async function renderMarbles() {
   $('mb-restart')?.addEventListener('click', () => { level = 1; startLevel(); });
 }
 
+/* ---------- mini-jeu : 2048 en cartes ---------- */
+
+const MG_N = 4;
+// 2 et 4 communes, 8 et 16 peu communes… 1024 légendaire, 2048 et plus en Gold
+const mergeRarity = (v) => {
+  const k = Math.log2(v);
+  return k <= 2 ? 'commune' : k <= 4 ? 'peu_commune' : k <= 6 ? 'rare' : k <= 8 ? 'epique' : 'legendaire';
+};
+const mergeGold = (v) => v >= 2048;
+
+function loadMergeGame() {
+  try { return JSON.parse(localStorage.getItem('mergeGame') || 'null'); } catch { return null; }
+}
+function saveMergeGame(g) {
+  try { localStorage.setItem('mergeGame', JSON.stringify(g)); } catch { /* stockage indisponible */ }
+}
+
+// une photo de vos cartes pour chaque valeur, de la bonne rareté si vous en avez une
+function mergePhotos() {
+  const pool = puzzlePool();
+  const photos = {};
+  for (let v = 2; v <= 65536; v *= 2) {
+    const r = mergeRarity(v);
+    const same = pool.filter((c) => c.rarity === r);
+    const c = same.length ? pick(same) : pool.length ? pick(pool) : null;
+    if (c) photos[v] = c.id;
+  }
+  return photos;
+}
+
+function newMergeGame() {
+  const g = { cells: Array(MG_N * MG_N).fill(0), score: 0, claimed: [], photos: mergePhotos(), won: false };
+  mergeSpawn(g); mergeSpawn(g);
+  return g;
+}
+function mergeSpawn(g) {
+  const free = g.cells.map((v, i) => (v ? -1 : i)).filter((i) => i >= 0);
+  if (!free.length) return -1;
+  const i = pick(free);
+  g.cells[i] = Math.random() < 0.9 ? 2 : 4;
+  return i;
+}
+const mergeCanMove = (cells) => cells.some((v, i) => !v
+  || (i % MG_N < MG_N - 1 && cells[i + 1] === v)
+  || (i + MG_N < cells.length && cells[i + MG_N] === v));
+
+async function renderMerge() {
+  const today = todayParis();
+  const cap = Number(state.settings?.games_daily_cap ?? 60);
+  let earned = state.me.game_coins_on === today ? Number(state.me.game_coins_today || 0) : 0;
+  const perTile = Number(state.settings?.merge_coins_per_tile ?? 5);
+  const other = partner();
+  const bestTile = (p) => (Number(p?.merge_best) ? String(p.merge_best) : '—');
+  let g = loadMergeGame();
+  if (!g || g.cells?.length !== MG_N * MG_N) { g = newMergeGame(); saveMergeGame(g); }
+  let bestScore = 0;
+  try { bestScore = Number(localStorage.getItem('mergeBest')) || 0; } catch { /* rien */ }
+
+  $app.innerHTML = `
+    <section class="merge-page">
+      <a class="back-link" href="#/jeu">← Games</a>
+      <header class="page-head">
+        <h1>2048 Cards</h1>
+        <p class="coins" id="coins">${Number(state.me.coins ?? 0)} ${COIN}</p>
+      </header>
+      <div class="scores">
+        <div><small class="muted">Score</small><b id="mg-score">${g.score}</b></div>
+        <div><small class="muted">Best tile</small><b id="mg-best">${bestTile(state.me)}</b></div>
+        ${other ? `<div><small class="muted">${esc(other.display_name || 'Partner')}</small><b>${bestTile(other)}</b></div>` : ''}
+      </div>
+      <p class="muted small">Swipe to slide every card. Two equal cards merge into the next one, from Common up to Legendary, then Gold at 2048. From 128, each new card earns ${COIN}.</p>
+      <div class="mg-board" id="mg-board">
+        ${Array.from({ length: MG_N * MG_N }, () => '<i class="mg-cell"></i>').join('')}
+        <div class="mg-end" id="mg-end"></div>
+      </div>
+      <div class="reveal-actions"><button class="btn ghost" id="mg-new" type="button">New game</button></div>
+    </section>`;
+
+  const $ = (id) => document.getElementById(id);
+  const board = $('mg-board');
+  const ids = [...new Set(Object.values(g.photos))];
+  const card = (v) => state.cards.find((c) => c.id === g.photos[v]);
+  let url = () => '';
+  let tiles = []; // { v, i, el }
+
+  const tileHTML = (v) => {
+    const c = card(v);
+    const src = c?.image_path && url(c.image_path);
+    return `${src ? `<img src="${esc(src)}" alt="" draggable="false">` : `<span class="mg-emoji">${esc(c ? firstEmoji(c.description) : '♥')}</span>`}<b>${v}</b>`;
+  };
+  const place = (el, i) => { el.style.setProperty('--r', Math.floor(i / MG_N)); el.style.setProperty('--c', i % MG_N); };
+  const makeTile = (v, i, cls = '') => {
+    const el = document.createElement('div');
+    el.className = `mg-tile r-${mergeRarity(v)}${mergeGold(v) ? ' gold' : ''} ${cls}`;
+    el.innerHTML = tileHTML(v);
+    place(el, i);
+    board.insertBefore(el, $('mg-end'));
+    return { v, i, el };
+  };
+  const drawAll = () => {
+    tiles.forEach((t) => t.el.remove());
+    tiles = g.cells.map((v, i) => (v ? makeTile(v, i) : null)).filter(Boolean);
+  };
+  const showScore = () => {
+    $('mg-score').textContent = g.score;
+    if (g.score > bestScore) { bestScore = g.score; try { localStorage.setItem('mergeBest', String(bestScore)); } catch { /* rien */ } }
+  };
+  const end = (html) => {
+    const e = $('mg-end');
+    e.innerHTML = html ? `<div class="panel b-panel">${html}</div>` : '';
+    e.classList.toggle('on', !!html);
+  };
+
+  const claim = (v) => {
+    if (v < 128 || g.claimed.includes(v)) return;
+    g.claimed.push(v);
+    saveMergeGame(g);
+    sb.rpc('merge_tile', { value: v }).then(({ data }) => {
+      if (!data) return;
+      state.me.coins = data.coins;
+      state.me.game_coins_on = today;
+      state.me.game_coins_today = data.today;
+      state.me.merge_best = data.best;
+      if ($('coins')) $('coins').textContent = `${data.coins} ${COIN}`;
+      if ($('mg-best')) $('mg-best').textContent = bestTile(state.me);
+      if (data.gain) toast(`New ${RARITY[mergeRarity(v)].label}${mergeGold(v) ? ' Gold' : ''} card: +${data.gain} ${COIN}`);
+      else if (earned < data.cap && data.today >= data.cap) toast('Daily coin limit reached');
+      earned = data.today;
+    });
+  };
+
+  let busy = false;
+  const move = (dir) => {
+    if (busy || $('mg-end').classList.contains('on')) return;
+    // dir : 0 gauche, 1 droite, 2 haut, 3 bas
+    const at = new Map(tiles.map((t) => [t.i, t]));
+    const moved = [], merged = [];
+    const cells = Array(MG_N * MG_N).fill(0);
+    let gain = 0;
+    for (let line = 0; line < MG_N; line++) {
+      const idx = [...Array(MG_N).keys()].map((k) => {
+        const p = dir === 1 || dir === 3 ? MG_N - 1 - k : k;
+        return dir <= 1 ? line * MG_N + p : p * MG_N + line;
+      });
+      let w = 0, lastTile = null;
+      for (const i of idx) {
+        const t = at.get(i);
+        if (!t) continue;
+        if (lastTile && lastTile.v === t.v && !lastTile.done) {
+          const target = idx[w - 1];
+          moved.push([t, target]);
+          lastTile.done = true;
+          cells[target] = t.v * 2;
+          merged.push({ a: lastTile, b: t, i: target, v: t.v * 2 });
+          gain += t.v * 2;
+        } else {
+          const target = idx[w++];
+          moved.push([t, target]);
+          cells[target] = t.v;
+          lastTile = t;
+        }
+      }
+    }
+    tiles.forEach((t) => delete t.done);
+    if (!moved.some(([t, i]) => t.i !== i) && !merged.length) return;
+    busy = true;
+    moved.forEach(([t, i]) => { t.i = i; place(t.el, i); });
+    g.cells = cells;
+    g.score += gain;
+    const spawned = mergeSpawn(g);
+    saveMergeGame(g);
+    setTimeout(() => {
+      for (const m of merged) {
+        m.a.el.remove(); m.b.el.remove();
+        tiles = tiles.filter((t) => t !== m.a && t !== m.b);
+        tiles.push(makeTile(m.v, m.i, 'merged'));
+        claim(m.v);
+      }
+      if (spawned >= 0) tiles.push(makeTile(g.cells[spawned], spawned, 'new'));
+      showScore();
+      busy = false;
+      const top = Math.max(...g.cells);
+      if (top >= 2048 && !g.won) {
+        g.won = true; saveMergeGame(g);
+        end(`<h2>A Gold card!</h2><p>You reached 2048 · Score ${g.score}</p><button class="btn primary" id="mg-go" type="button">Keep going</button>`);
+        $('mg-go').addEventListener('click', () => end(''));
+      } else if (!mergeCanMove(g.cells)) {
+        end(`<h2>No more moves</h2><p>Score ${g.score} · Best card ${top}</p>${g.score >= bestScore ? '<p class="record">Best score!</p>' : `<p class="muted small">Best score: ${bestScore}</p>`}<button class="btn primary" id="mg-again" type="button">New game</button>`);
+        $('mg-again').addEventListener('click', restart);
+      }
+    }, 130);
+  };
+
+  const restart = () => {
+    g = newMergeGame();
+    saveMergeGame(g);
+    end('');
+    signedUrls(Object.values(g.photos).map((id) => state.cards.find((c) => c.id === id)?.image_path)).then((u) => {
+      url = u;
+      drawAll();
+    });
+    showScore();
+    drawAll();
+  };
+  $('mg-new').addEventListener('click', () => { if (g.score === 0 || confirmNew()) restart(); });
+  const confirmNew = () => {
+    const b = $('mg-new');
+    if (b.dataset.sure) return true;
+    b.dataset.sure = '1';
+    b.textContent = 'Tap again to start over';
+    setTimeout(() => { if (b.isConnected) { delete b.dataset.sure; b.textContent = 'New game'; } }, 2500);
+    return false;
+  };
+
+  // glisser le doigt, ou les flèches du clavier
+  let start = null;
+  board.addEventListener('pointerdown', (e) => {
+    if (!e.isPrimary) return;
+    start = [e.clientX, e.clientY];
+    try { board.setPointerCapture(e.pointerId); } catch { /* rien */ }
+  });
+  board.addEventListener('pointerup', (e) => {
+    if (!start) return;
+    const dx = e.clientX - start[0], dy = e.clientY - start[1];
+    start = null;
+    if (Math.max(Math.abs(dx), Math.abs(dy)) < 24) return;
+    move(Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? 0 : 1) : (dy < 0 ? 2 : 3));
+  });
+  board.addEventListener('pointercancel', () => { start = null; });
+  const onKey = (e) => {
+    if (!board.isConnected) { window.removeEventListener('keydown', onKey); return; }
+    const dir = { ArrowLeft: 0, ArrowRight: 1, ArrowUp: 2, ArrowDown: 3 }[e.key];
+    if (dir === undefined) return;
+    e.preventDefault();
+    move(dir);
+  };
+  window.addEventListener('keydown', onKey);
+
+  drawAll();
+  if (!mergeCanMove(g.cells)) {
+    end(`<h2>No more moves</h2><p>Score ${g.score}</p><button class="btn primary" id="mg-again" type="button">New game</button>`);
+    $('mg-again').addEventListener('click', restart);
+  }
+  url = await signedUrls(ids.map((id) => state.cards.find((c) => c.id === id)?.image_path));
+  if (board.isConnected) drawAll();
+}
+
 /* ---------- profil ---------- */
 
 function renderProfil() {
@@ -2250,6 +2501,7 @@ function renderProfil() {
           <label>Blocks: coins per line<span class="pct"><input name="blocks_coins_per_line" type="number" inputmode="numeric" min="0" step="1" value="${Number(state.settings?.blocks_coins_per_line ?? 3)}">${COIN}</span></label>
           <label>Puzzle: coins per piece<span class="pct"><input name="puzzle_coins_per_piece" type="number" inputmode="numeric" min="0" step="1" value="${Number(state.settings?.puzzle_coins_per_piece ?? 2)}">${COIN}</span></label>
           <label>Burger Shop: coins per order<span class="pct"><input name="burger_coins_per_order" type="number" inputmode="numeric" min="0" step="1" value="${Number(state.settings?.burger_coins_per_order ?? 4)}">${COIN}</span></label>
+          <label>2048 Cards: coins per card from 128<span class="pct"><input name="merge_coins_per_tile" type="number" inputmode="numeric" min="0" step="1" value="${Number(state.settings?.merge_coins_per_tile ?? 5)}">${COIN}</span></label>
           <label>Marbles: coins per level<span class="pct"><input name="marbles_coins_per_level" type="number" inputmode="numeric" min="0" step="1" value="${Number(state.settings?.marbles_coins_per_level ?? 10)}">${COIN}</span></label>
           <label>Daily coin limit for games<span class="pct"><input name="games_daily_cap" type="number" inputmode="numeric" min="0" step="1" value="${Number(state.settings?.games_daily_cap ?? 60)}">${COIN}</span></label>
         </div>
@@ -2297,7 +2549,7 @@ function renderProfil() {
     if (Math.round(rateSum() * 100) / 100 !== 100) return toast('The rarity rates must add up to 100%', 'err');
     const patch = { updated_at: new Date().toISOString() };
     for (const k of [...RARITIES.map((r) => `rate_${r.id}`), 'holo_chance', 'gold_chance', 'cooldown_hours']) patch[k] = Number(ratesForm[k].value);
-    for (const k of ['pack_price', 'max_stored_packs', 'blocks_coins_per_line', 'puzzle_coins_per_piece', 'burger_coins_per_order', 'marbles_coins_per_level', 'games_daily_cap', ...RARITIES.map((r) => `coins_${r.id}`)]) patch[k] = Math.round(Number(ratesForm[k].value));
+    for (const k of ['pack_price', 'max_stored_packs', 'blocks_coins_per_line', 'puzzle_coins_per_piece', 'burger_coins_per_order', 'marbles_coins_per_level', 'merge_coins_per_tile', 'games_daily_cap', ...RARITIES.map((r) => `coins_${r.id}`)]) patch[k] = Math.round(Number(ratesForm[k].value));
     const { data, error } = await sb.from('game_settings').update(patch).eq('id', 1).select().maybeSingle();
     if (error) return toast(error.message, 'err');
     if (data) state.settings = data;
@@ -2307,7 +2559,7 @@ function renderProfil() {
 
 /* ---------- routeur ---------- */
 
-const routes = { booster: renderBooster, collection: renderCollection, jeu: renderJeu, blocks: renderBlocks, memory: renderMemory, puzzle: renderPuzzle, burger: renderBurger, marbles: renderMarbles, ajouter: renderAjouter, profil: renderProfil };
+const routes = { booster: renderBooster, collection: renderCollection, jeu: renderJeu, blocks: renderBlocks, memory: renderMemory, puzzle: renderPuzzle, burger: renderBurger, marbles: renderMarbles, merge: renderMerge, ajouter: renderAjouter, profil: renderProfil };
 
 async function route() {
   clearInterval(state.timer);
@@ -2315,7 +2567,7 @@ async function route() {
   const name = (location.hash.replace(/^#\/?/, '') || 'booster').split('?')[0];
   const page = routes[name] ? name : 'booster';
   $nav.hidden = false;
-  const tab = ['blocks', 'memory', 'puzzle', 'burger', 'marbles'].includes(page) ? 'jeu' : page;
+  const tab = ['blocks', 'memory', 'puzzle', 'burger', 'marbles', 'merge'].includes(page) ? 'jeu' : page;
   $nav.querySelectorAll('a').forEach((a) => a.classList.toggle('active', a.dataset.route === tab));
   try {
     await routes[page]();

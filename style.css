@@ -769,3 +769,42 @@ input:focus, select:focus { outline: 2px solid var(--rose); outline-offset: 1px;
 .mb-bar { position: absolute; left: 14px; right: 14px; bottom: 9px; height: 5px; border-radius: 3px; background: rgba(255,255,255,.12); overflow: hidden; pointer-events: none; }
 .mb-bar i { display: block; height: 100%; width: 0; border-radius: 3px; background: linear-gradient(90deg, var(--rose), var(--gold)); transition: width .3s; }
 .marbles-page > .small { margin-top: 10px; }
+
+/* ---------- 2048 Cards ---------- */
+.merge-art { grid-template-columns: repeat(2, 1fr); gap: 4px; padding: 8px; }
+.merge-art i { display: grid; place-items: center; border-radius: 6px; font: 800 .8rem var(--font-title); color: #1d1020; }
+.merge-art i:nth-child(1), .merge-art i:nth-child(2) { background: var(--c-commune); }
+.merge-art i:nth-child(3), .merge-art i:nth-child(4) { background: var(--c-peu_commune); }
+.mg-board {
+  --gap: 8px; position: relative; display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--gap); padding: var(--gap);
+  width: min(100%, 420px); margin: 12px auto 0; aspect-ratio: 1; border-radius: 16px; background: var(--bg2); border: 1px solid var(--line);
+  touch-action: none; user-select: none; -webkit-user-select: none;
+}
+.mg-cell { border-radius: 10px; background: rgba(255,255,255,.05); }
+.mg-tile {
+  --size: calc((100% - 5 * var(--gap)) / 4);
+  position: absolute; width: var(--size); height: var(--size);
+  left: calc(var(--gap) + var(--c) * (var(--size) + var(--gap))); top: calc(var(--gap) + var(--r) * (var(--size) + var(--gap)));
+  border-radius: 10px; overflow: hidden; border: 3px solid var(--rc); background: var(--bg2);
+  display: grid; place-items: center; transition: left .12s ease, top .12s ease; box-shadow: 0 4px 10px rgba(0,0,0,.35);
+}
+.mg-tile img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.mg-tile .mg-emoji { font-size: 1.8rem; }
+.mg-tile b {
+  position: absolute; right: 3px; bottom: 3px; padding: 1px 6px; border-radius: 8px; background: rgba(20,10,25,.78);
+  color: #fff; font: 800 1rem var(--font-title); font-variant-numeric: tabular-nums;
+}
+.mg-tile.r-commune { --rc: var(--c-commune); }
+.mg-tile.r-peu_commune { --rc: var(--c-peu_commune); }
+.mg-tile.r-rare { --rc: var(--c-rare); }
+.mg-tile.r-epique { --rc: var(--c-epique); box-shadow: 0 0 12px rgba(185,119,255,.55); }
+.mg-tile.r-legendaire { --rc: var(--c-legendaire); box-shadow: 0 0 14px rgba(245,196,107,.6); }
+.mg-tile.gold { border-color: #ffd76a; box-shadow: 0 0 18px #ffb43a; }
+.mg-tile.gold b { background: linear-gradient(#ffe08a, #d99a1e); color: #3a2400; }
+.mg-tile.new { animation: mg-in .18s ease; }
+.mg-tile.merged { animation: mg-pop .2s ease; z-index: 2; }
+@keyframes mg-in { from { transform: scale(.3); opacity: 0; } }
+@keyframes mg-pop { 50% { transform: scale(1.14); } }
+.mg-end { position: absolute; inset: 0; z-index: 5; display: none; align-items: center; justify-content: center; padding: 14px; border-radius: 16px; background: rgba(20,13,24,.72); }
+.mg-end.on { display: flex; }
+.merge-page > .small { margin: 0; }
