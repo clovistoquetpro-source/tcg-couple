@@ -640,25 +640,46 @@ input:focus, select:focus { outline: 2px solid var(--rose); outline-offset: 1px;
 @keyframes warn { 50% { box-shadow: inset 0 0 0 2px transparent; } }
 .gslot.burnt::after, .fslot.burnt::after { content: "🔥"; position: absolute; top: 2px; right: 3px; font-size: .8rem; }
 .gslot.burnt .L, .fslot.burnt .fries { filter: brightness(.22) saturate(.4); }
-.gslot.raw .L-patty { background: linear-gradient(#e8908a, #c0605a); }
-.gslot.raw .L-bacon { background: repeating-linear-gradient(90deg, #f29a8a 0 1.2em, #fcd9cf 1.2em 1.8em); }
-.gslot.raw .L-sausage { background: linear-gradient(#f4a7a7, #db7f7f); }
-.fslot.raw .fries::before { background: repeating-linear-gradient(90deg, #fff4c2 0 .3em, transparent .3em .45em); }
+.gslot.raw .L-patty, .bdrag-ghost.raw .L-patty { background: linear-gradient(#e8908a, #c0605a); }
+.gslot.raw .L-bacon, .bdrag-ghost.raw .L-bacon { background: repeating-linear-gradient(90deg, #f29a8a 0 1.2em, #fcd9cf 1.2em 1.8em); }
+.gslot.raw .L-sausage, .bdrag-ghost.raw .L-sausage { background: linear-gradient(#f4a7a7, #db7f7f); }
+.fslot.raw .fries::before, .bdrag-ghost.raw .fries::before { background: repeating-linear-gradient(90deg, #fff4c2 0 .3em, transparent .3em .45em); }
 
-/* assiette, frites et boisson */
-.work { position: relative; display: flex; align-items: flex-end; justify-content: center; gap: 14px; height: 116px; padding: 4px 12px 8px; }
-.plate {
-  position: relative; display: flex; align-items: flex-end; justify-content: center;
-  width: 150px; height: 104px; padding-bottom: 9px;
-  background: radial-gradient(ellipse 75px 12px at 50% calc(100% - 7px), #f4eef9 0 96%, transparent 100%);
+/* trois assiettes : on y glisse les ingrédients, puis on glisse l'assiette sur le client */
+.work { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 10px 8px 6px; }
+.btray {
+  position: relative; display: flex; align-items: flex-end; gap: 2px; min-width: 0; height: 100px; padding: 4px 4px 6px;
+  border-radius: 12px; background: rgba(255,255,255,.05); border: 2px solid var(--line); touch-action: none; cursor: grab;
+  transition: border-color .15s, background .15s;
 }
-.plate .bstack { font-size: 8.6px; }
-.plate-hint { position: absolute; top: 40%; left: 0; right: 0; text-align: center; color: var(--muted); font-size: .78rem; }
-.sides { display: flex; gap: 8px; align-items: flex-end; margin-bottom: 8px; }
-.side-slot { width: 42px; height: 56px; display: flex; align-items: flex-end; justify-content: center; border-radius: 10px; }
-.side-slot.empty { border: 2px dashed var(--line); }
-.side-slot .cup { font-size: 15px; }
-.side-slot .fries { font-size: 15px; }
+.tplate {
+  position: relative; flex: 1; min-width: 0; height: 100%; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 6px;
+  background: radial-gradient(ellipse 46% 7px at 50% calc(100% - 5px), #f4eef9 0 94%, transparent 100%);
+}
+.tplate .bstack { font-size: 6.2px; }
+.plate-hint { position: absolute; top: 26%; left: 2px; right: 2px; text-align: center; color: var(--muted); font-size: .66rem; line-height: 1.2; }
+.tsides { flex: none; display: flex; flex-direction: column; gap: 3px; width: 22px; }
+.tside { height: 30px; display: flex; align-items: flex-end; justify-content: center; border-radius: 6px; }
+.tside.off { border: 1.5px dashed var(--line); opacity: .7; }
+.tside .cup, .tside .fries { font-size: 8.5px; }
+.btray.over { border-color: var(--rose); background: rgba(255,111,156,.14); }
+.btray.pop { animation: pop .18s ease; }
+.seat.over .bubble { box-shadow: 0 0 0 3px #52c98f, 0 3px 8px rgba(80,30,10,.2); }
+.seat.over .face { transform: scale(1.12); }
+.grill.over, .fryer.over { box-shadow: 0 0 0 3px var(--rose); }
+.bin.trash.over { background: rgba(255,90,110,.3); transform: scale(1.06); }
+.bin, .gslot, .fslot { touch-action: none; }
+.bshop { -webkit-touch-callout: none; }
+.dragging { opacity: .35; }
+.bdrag-ghost {
+  position: fixed; z-index: 1000; left: -200px; top: -200px; pointer-events: none;
+  display: flex; align-items: flex-end; gap: 3px; transform: translate(-50%, -50%) scale(1.1);
+  filter: drop-shadow(0 6px 8px rgba(0,0,0,.4));
+}
+.bdrag-ghost .bstack { font-size: 6.2px; }
+.bdrag-ghost .cup, .bdrag-ghost .fries { font-size: 10px; }
+.bdrag-ghost.g-bin, .bdrag-ghost.g-drink { font-size: 30px; }
+.bdrag-ghost.burnt .L, .bdrag-ghost.burnt .fries { filter: brightness(.22) saturate(.4); }
 .bins { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; padding: 4px 6px 8px; }
 .bin {
   position: relative; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 2px;
