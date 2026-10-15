@@ -2476,8 +2476,7 @@ async function renderMerge() {
 /* ---------- mini-jeu : 7 différences ---------- */
 
 const SD_W = 360, SD_H = 270, SD_COUNT = 7, SD_LIVES = 3;
-const SD_KINDS = ['mirror', 'flip', 'turn', 'clone', 'tint', 'shade', 'sticker', 'zoom'];
-const SD_STICKERS = ['♥', '⭐', '🌸', '🦋', '🍀', '✨', '🎈', '🐞'];
+const SD_KINDS = ['mirror', 'flip', 'turn', 'clone', 'erase', 'tint', 'shade', 'zoom'];
 
 // charge la photo en essayant d'abord en CORS, pour pouvoir lire ses pixels
 function spotLoadImage(src) {
@@ -2518,65 +2517,70 @@ function spotDetail(base) {
 function spotPlan(detail) {
   const kinds = [...SD_KINDS].sort(() => Math.random() - 0.5).slice(0, SD_COUNT);
   const diffs = [];
-  const free = (x, y, r) => diffs.every((d) => Math.hypot(d.x - x, d.y - y) > d.r + r + 14);
+  const free = (x, y, r) => diffs.every((d) => Math.hypot(d.x - x, d.y - y) > d.r + r + 10);
+  const inside = (x, y, r) => x > r && y > r && x < SD_W - r && y < SD_H - r;
   for (const kind of kinds) {
-    const r = 17 + Math.random() * 7;
+    const r = 10 + Math.random() * 5;
     let best = null;
     for (let k = 0; k < 60; k++) {
       const x = r + 6 + Math.random() * (SD_W - 2 * r - 12);
       const y = r + 6 + Math.random() * (SD_H - 2 * r - 12);
       if (!free(x, y, r)) continue;
-      // les retournements et copies ont besoin de détails ; couleurs et autocollants vont partout
-      const score = detail && !['tint', 'shade', 'sticker'].includes(kind) ? detail(x, y, r) : Math.random();
+      // toujours sur un endroit avec du détail, pour que la retouche touche un vrai objet
+      const score = detail ? detail(x, y, r) : Math.random();
       if (!best || score > best.score) best = { x, y, r, score };
     }
     if (!best) continue;
     const d = { kind, x: best.x, y: best.y, r: best.r };
-    if (kind === 'clone') {
-      for (let k = 0; k < 40; k++) {
-        const sx = best.r + Math.random() * (SD_W - 2 * best.r), sy = best.r + Math.random() * (SD_H - 2 * best.r);
-        if (Math.hypot(sx - d.x, sy - d.y) > 4 * best.r) { d.sx = sx; d.sy = sy; break; }
+    if (kind === 'clone' || kind === 'erase') {
+      // clone : un morceau d'ailleurs ; erase : le décor juste à côté recouvre l'objet
+      for (let k = 0; k < 40 && d.sx === undefined; k++) {
+        let sx, sy;
+        if (kind === 'clone') { sx = Math.random() * SD_W; sy = Math.random() * SD_H; }
+        else { const a = Math.random() * Math.PI * 2; sx = d.x + Math.cos(a) * d.r * 2.4; sy = d.y + Math.sin(a) * d.r * 2.4; }
+        if (inside(sx, sy, d.r) && Math.hypot(sx - d.x, sy - d.y) > (kind === 'clone' ? 5 : 2) * d.r) { d.sx = sx; d.sy = sy; }
       }
       if (d.sx === undefined) d.kind = 'tint';
     }
     if (d.kind === 'tint') d.hue = Math.floor(Math.random() * 360);
     if (kind === 'shade') d.dark = Math.random() < 0.5;
-    if (kind === 'sticker') d.emoji = pick(SD_STICKERS);
     diffs.push(d);
   }
   return diffs;
 }
 
-function spotEdit(ctx, base, d) {
-  const all = () => ctx.drawImage(base, 0, 0, SD_W, SD_H);
-  ctx.save();
-  if (d.kind === 'sticker') {
-    ctx.font = `${Math.round(d.r * 1.5)}px system-ui, "Apple Color Emoji", sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#ff4d6d';
-    ctx.fillText(d.emoji, d.x, d.y);
-    ctx.restore();
-    return;
+// chaque retouche est peinte à part puis fondue sur les bords, pour qu'aucun contour ne la trahisse
+function spotEdit(ctx, base, d, k) {
+  const p = document.createElement('canvas');
+  p.width = SD_W * k; p.height = SD_H * k;
+  const c = p.getContext('2d');
+  c.setTransform(k, 0, 0, k, 0, 0);
+  const all = () => c.drawImage(base, 0, 0, SD_W, SD_H);
+  c.save();
+  if (d.kind === 'mirror') { c.translate(2 * d.x, 0); c.scale(-1, 1); all(); }
+  else if (d.kind === 'flip') { c.translate(0, 2 * d.y); c.scale(1, -1); all(); }
+  else if (d.kind === 'turn') { c.translate(d.x, d.y); c.rotate(Math.PI / 2); c.translate(-d.x, -d.y); all(); }
+  else if (d.kind === 'zoom') { c.translate(d.x, d.y); c.scale(1.35, 1.35); c.translate(-d.x, -d.y); all(); }
+  else if (d.kind === 'clone' || d.kind === 'erase') { c.translate(d.x - d.sx, d.y - d.sy); all(); }
+  else {
+    all();
+    if (d.kind === 'tint') {
+      c.globalCompositeOperation = 'color';
+      c.globalAlpha = 0.35;
+      c.fillStyle = `hsl(${d.hue} 90% 50%)`;
+    } else {
+      c.fillStyle = d.dark ? 'rgba(0,0,0,.25)' : 'rgba(255,255,255,.25)';
+    }
+    c.fillRect(d.x - d.r * 1.3, d.y - d.r * 1.3, d.r * 2.6, d.r * 2.6);
   }
-  ctx.beginPath();
-  ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
-  ctx.clip();
-  if (d.kind === 'mirror') { ctx.translate(2 * d.x, 0); ctx.scale(-1, 1); all(); }
-  else if (d.kind === 'flip') { ctx.translate(0, 2 * d.y); ctx.scale(1, -1); all(); }
-  else if (d.kind === 'turn') { ctx.translate(d.x, d.y); ctx.rotate(Math.PI / 2); ctx.translate(-d.x, -d.y); all(); }
-  else if (d.kind === 'zoom') { ctx.translate(d.x, d.y); ctx.scale(1.7, 1.7); ctx.translate(-d.x, -d.y); all(); }
-  else if (d.kind === 'clone') { ctx.translate(d.x - d.sx, d.y - d.sy); all(); }
-  else if (d.kind === 'tint') {
-    ctx.globalCompositeOperation = 'color';
-    ctx.globalAlpha = 0.9;
-    ctx.fillStyle = `hsl(${d.hue} 95% 50%)`;
-    ctx.fillRect(d.x - d.r, d.y - d.r, 2 * d.r, 2 * d.r);
-  } else if (d.kind === 'shade') {
-    ctx.fillStyle = d.dark ? 'rgba(0,0,0,.55)' : 'rgba(255,255,255,.55)';
-    ctx.fillRect(d.x - d.r, d.y - d.r, 2 * d.r, 2 * d.r);
-  }
-  ctx.restore();
+  c.restore();
+  const g = c.createRadialGradient(d.x, d.y, d.r * 0.45, d.x, d.y, d.r * 1.15);
+  g.addColorStop(0, '#000');
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  c.globalCompositeOperation = 'destination-in';
+  c.fillStyle = g;
+  c.fillRect(0, 0, SD_W, SD_H);
+  ctx.drawImage(p, 0, 0, SD_W, SD_H);
 }
 
 async function renderSpot() {
@@ -2669,7 +2673,7 @@ async function renderSpot() {
       const ctx = cv.getContext('2d');
       ctx.setTransform(k, 0, 0, k, 0, 0);
       ctx.drawImage(base, 0, 0, SD_W, SD_H);
-      if (n === 1) diffs.forEach((d) => spotEdit(ctx, base, d));
+      if (n === 1) diffs.forEach((d) => spotEdit(ctx, base, d, k));
     });
     round = { diffs, found: new Set(), lives: SD_LIVES, done: false, card: c.id };
     showStats();
@@ -2718,7 +2722,7 @@ async function renderSpot() {
     let hit = -1, bestD = Infinity;
     round.diffs.forEach((d, i) => {
       const dist = Math.hypot(d.x - x, d.y - y);
-      if (dist <= d.r + 12 && dist < bestD) { hit = i; bestD = dist; }
+      if (dist <= d.r + 10 && dist < bestD) { hit = i; bestD = dist; }
     });
     if (hit >= 0 && round.found.has(hit)) return; // déjà trouvée : pas de pénalité
     if (hit >= 0) {
