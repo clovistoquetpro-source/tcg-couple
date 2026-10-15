@@ -564,3 +564,114 @@ input:focus, select:focus { outline: 2px solid var(--rose); outline-offset: 1px;
 .puzzle-art .pz1 { background: linear-gradient(135deg, #f5c46b, #d94a80); transform: translate(4px, -4px) rotate(8deg); box-shadow: 0 4px 8px rgba(0,0,0,.4); }
 .puzzle-art .pz2 { background: linear-gradient(135deg, #d94a80, #3d0f3a); }
 .puzzle-art .pz3 { background: linear-gradient(135deg, #b977ff, #5a2a7a); }
+
+/* ---------- Burger Shop ---------- */
+.bscores div { padding: 8px 10px; }
+.bscores b { font-size: 1.05rem; white-space: nowrap; }
+.bscores #b-lives { color: var(--rose); letter-spacing: .05em; }
+.bshop {
+  position: relative; border-radius: 18px; overflow: hidden; border: 1px solid var(--line);
+  background: linear-gradient(#ffe7c4 0 146px, transparent 146px), var(--surface);
+  user-select: none; -webkit-user-select: none;
+}
+.bshop::before { /* store au-dessus du comptoir */
+  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 14px;
+  background: repeating-linear-gradient(90deg, #ff6f9c 0 22px, #fff 22px 44px);
+  -webkit-mask: radial-gradient(circle at 11px 100%, transparent 6px, #000 6.5px) 0 0 / 22px 100% repeat-x;
+          mask: radial-gradient(circle at 11px 100%, transparent 6px, #000 6.5px) 0 0 / 22px 100% repeat-x;
+}
+.counter { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 18px 8px 0; height: 146px; }
+.seat { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; cursor: pointer; }
+.seat.closed { opacity: .35; }
+.seat .bubble {
+  position: relative; display: flex; align-items: flex-end; justify-content: center; gap: 4px;
+  min-width: 78px; min-height: 58px; padding: 6px 8px; margin-bottom: 6px;
+  background: #fff; border-radius: 14px; box-shadow: 0 3px 8px rgba(80,30,10,.2);
+}
+.seat .bubble::after { content: ""; position: absolute; bottom: -6px; left: 50%; margin-left: -6px; border: 6px solid transparent; border-bottom: 0; border-top-color: #fff; }
+.seat .bubble .bstack { font-size: 5.6px; }
+.seat .bubble .cup { font-size: 7px; }
+.seat .face { position: relative; font-size: 34px; line-height: 1; animation: arrive .5s cubic-bezier(.3,1.4,.5,1); }
+.seat .mood { position: absolute; right: -14px; top: -6px; font-size: 18px; }
+.seat .patience { width: 70%; height: 6px; margin: 4px 0 6px; border-radius: 3px; background: rgba(0,0,0,.18); overflow: hidden; }
+.seat .patience i { display: block; height: 100%; border-radius: 3px; transition: width .1s linear, background .3s; }
+.seat.happy .face { animation: hop .5s ease 2; }
+.seat.happy { opacity: 0; transition: opacity .4s .5s; }
+.seat.wrong .bubble { animation: shake .3s linear 2; }
+@keyframes arrive { from { transform: translateY(30px); opacity: 0; } }
+@keyframes hop { 50% { transform: translateY(-10px); } }
+.float-gain {
+  position: absolute; top: 40%; left: 50%; transform: translateX(-50%); z-index: 4; white-space: nowrap;
+  font: 900 1.1rem var(--font-title); color: #2a9d5c; text-shadow: 0 1px 0 #fff, 0 0 8px #fff;
+  animation: float-up 1.3s ease forwards; pointer-events: none;
+}
+@keyframes float-up { to { transform: translate(-50%, -46px); opacity: 0; } }
+.counter-edge { height: 16px; background: linear-gradient(#d9473f, #a8282a); box-shadow: 0 4px 0 #7a1c20; }
+.work { position: relative; display: flex; align-items: flex-end; justify-content: center; gap: 18px; height: 140px; padding: 6px 12px 10px; }
+.plate-hint { position: absolute; top: 34%; left: 0; right: 0; text-align: center; color: var(--muted); font-size: .8rem; }
+.plate {
+  position: relative; display: flex; align-items: flex-end; justify-content: center;
+  width: 150px; height: 120px; padding-bottom: 10px;
+  background: radial-gradient(ellipse 75px 13px at 50% calc(100% - 8px), #f4eef9 0 96%, transparent 100%);
+}
+.plate .bstack { font-size: 10.5px; }
+.cup-slot { width: 44px; height: 62px; margin-bottom: 12px; display: flex; align-items: flex-end; justify-content: center; border-radius: 10px; }
+.cup-slot.empty { border: 2px dashed var(--line); }
+.cup-slot .cup { font-size: 17px; }
+.bins { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 0 8px 10px; }
+.bin {
+  position: relative; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 3px;
+  height: 66px; padding: 6px 2px 5px; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--bg2); color: var(--text); font: 500 .72rem var(--font); cursor: pointer;
+}
+.bin:active, .bin.pop { transform: scale(.94); }
+.bin.pop { animation: pop .18s ease; }
+@keyframes pop { 50% { transform: scale(.9); } }
+.bin .bin-art { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 26px; }
+.bin .bin-art .bstack { font-size: 5px; }
+.bin.drink .bin-art .cup { font-size: 10px; }
+.bin.locked { opacity: .45; }
+.bin.locked::after { content: "🔒"; position: absolute; top: 4px; right: 5px; font-size: .8rem; }
+.bin.trash { border-color: rgba(255,90,110,.4); }
+.b-overlay { position: absolute; inset: 0; z-index: 10; display: none; align-items: center; justify-content: center; padding: 16px; background: rgba(20,13,24,.72); }
+.b-overlay.on { display: flex; }
+.b-panel { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 6px; max-width: 320px; }
+.b-panel h2, .b-panel p { margin: 0; }
+.b-panel .record { color: var(--rose2); font-weight: 700; }
+.b-panel .btn { margin-top: 8px; }
+.burger-art { display: flex; align-items: center; justify-content: center; }
+.burger-art .bstack { font-size: 5.4px; }
+
+/* couches du burger, dessinées en CSS (tailles en em pour les réduire facilement) */
+.bstack { display: inline-flex; flex-direction: column-reverse; align-items: center; }
+.L { display: block; flex: none; width: 10em; }
+.L-bun { height: 1.5em; border-radius: .3em .3em 1.2em 1.2em; background: linear-gradient(#f4bb6a, #d9852f); box-shadow: inset 0 -.3em 0 rgba(130,60,10,.3); }
+.L-top {
+  height: 3.3em; width: 10.4em; border-radius: 5.2em 5.2em .7em .7em / 3.1em 3.1em .7em .7em;
+  background:
+    radial-gradient(ellipse at 30% 25%, rgba(255,255,255,.5), transparent 35%),
+    radial-gradient(ellipse .22em .14em at 50% 50%, #fff6dd 90%, transparent) .6em .4em / 1.7em 1.05em,
+    linear-gradient(#f7b85e, #d9802c);
+  box-shadow: inset 0 -.35em 0 rgba(130,60,10,.25);
+}
+.L-patty { height: 1.5em; width: 10.3em; border-radius: .8em; background: linear-gradient(#83461f, #4b220d); box-shadow: inset 0 .2em 0 rgba(255,255,255,.12); }
+.L-cheese { position: relative; height: .6em; width: 10.8em; background: #ffc928; border-radius: .15em; }
+.L-cheese::after { content: ""; position: absolute; left: 1.4em; top: .55em; border: .55em solid transparent; border-bottom: 0; border-top: .9em solid #ffc928; filter: drop-shadow(5.2em 0 0 #ffc928); }
+.L-lettuce {
+  height: 1em; width: 11em; background: linear-gradient(#8ad957, #4f9e2f);
+  -webkit-mask: linear-gradient(#000, #000) top / 100% 60% no-repeat, radial-gradient(circle at 50% 0, #000 .42em, transparent .45em) bottom / .9em 50% repeat-x;
+          mask: linear-gradient(#000, #000) top / 100% 60% no-repeat, radial-gradient(circle at 50% 0, #000 .42em, transparent .45em) bottom / .9em 50% repeat-x;
+}
+.L-tomato { height: .8em; width: 9.6em; border-radius: .4em; background: repeating-linear-gradient(90deg, #e8432f 0 2.2em, #b92a1c 2.2em 2.4em); }
+.L-onion { height: .6em; width: 9.8em; border-radius: .3em; background: #f6ecf8; box-shadow: inset 0 0 0 .16em #a35bc4; }
+.L-bacon { height: .75em; width: 10.4em; border-radius: .2em; background: repeating-linear-gradient(90deg, #b8402b 0 1.2em, #f2a88c 1.2em 1.8em); transform: skewX(-14deg); }
+.L-sauce { height: .45em; width: 9.2em; border-radius: .3em; background: #d81f26; }
+
+/* gobelets */
+.cup { position: relative; display: inline-block; flex: none; width: 2.2em; height: 3.2em; }
+.cup::before { content: ""; position: absolute; inset: .55em 0 0; clip-path: polygon(0 0, 100% 0, 84% 100%, 16% 100%); background: linear-gradient(90deg, rgba(255,255,255,.55), transparent 45%), var(--drink, #5a2a17); }
+.cup::after { content: ""; position: absolute; left: -.12em; right: -.12em; top: .38em; height: .38em; border-radius: .2em; background: #fff; box-shadow: 0 .05em .1em rgba(0,0,0,.25); }
+.cup i { position: absolute; left: 52%; top: -.25em; width: .28em; height: 1.1em; background: repeating-linear-gradient(#ff6f9c 0 .22em, #fff .22em .44em); transform: rotate(14deg); border-radius: .1em; }
+.cup-cola { --drink: #5a2a17; }
+.cup-lemon { --drink: #ffe45c; }
+.cup-orange { --drink: #ff9a2e; }

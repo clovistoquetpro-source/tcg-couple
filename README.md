@@ -37,10 +37,11 @@ Chaque doublon rapporte des pièces (Commune 5, Peu commune 10, Rare 25, Épique
 ## Jeux (onglet Play)
 
 - **Blocks** : on glisse des formes sur une grille 8×8, chaque ligne ou colonne pleine disparaît. Chaque ligne rapporte 3 pièces (`blocks_lines()`), jusqu'à 300 pièces par jour. La partie est gardée dans le téléphone si on quitte la page.
+- **Burger Shop** : des clients attendent au comptoir avec leur commande (burger et parfois une boisson). On empile les ingrédients dans l'ordre puis on touche le client pour le servir. Chaque commande servie rapporte 4 pièces (`burger_serve()`), dans le même plafond du jour. Les niveaux débloquent oignon, bacon, sauce et d'autres boissons ; 3 clients fâchés et la boutique ferme.
 - **Puzzle** : une photo de vos cartes découpée en 3×3, 4×4 ou 5×5 morceaux à remettre en place en les échangeant. Un puzzle fini rapporte 2 pièces par morceau (`claim_puzzle()`), dans le même plafond du jour que Blocks.
 - **Memory** : 6 paires de vos cartes. La première partie du jour rapporte jusqu'à 50 pièces selon le nombre de coups (`claim_memory()`).
 
-Le gain par ligne, le gain par morceau et le plafond du jour se règlent dans Profile → Game settings.
+Le gain par ligne, par morceau, par commande et le plafond du jour se règlent dans Profile → Game settings.
 
 ## Mettre en ligne sur Vercel
 
