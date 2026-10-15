@@ -637,6 +637,10 @@ function renderJeu() {
         <span class="game-art merge-art" aria-hidden="true"><i>2</i><i>4</i><i>8</i><i>16</i></span>
         <span><b>2048 Cards</b><small class="muted">Slide your cards and merge equal ones, from Common up to Gold. From 128, each new card gives ${COIN}, within the daily limit.</small></span>
       </a>
+      <a class="game-card" href="#/spot">
+        <span class="game-art spot-art" aria-hidden="true"><i></i><i><b></b></i></span>
+        <span><b>7 Differences</b><small class="muted">One of your photos and a copy with ${SD_COUNT} changes: find them all. Each photo solved gives ${Number(state.settings?.spot_coins_per_round ?? 15)} ${COIN}, within the daily limit.</small></span>
+      </a>
       <a class="game-card" href="#/puzzle">
         <span class="game-art puzzle-art" aria-hidden="true">${[0, 1, 2, 3].map((i) => `<i class="pz${i}"></i>`).join('')}</span>
         <span><b>Puzzle</b><small class="muted">Put one of your photos back together. Each finished puzzle gives up to ${puzzleReward(5)} ${COIN}, within the same daily limit as Blocks.</small></span>
@@ -2469,6 +2473,280 @@ async function renderMerge() {
   if (board.isConnected) drawAll();
 }
 
+/* ---------- mini-jeu : 7 différences ---------- */
+
+const SD_W = 360, SD_H = 270, SD_COUNT = 7, SD_LIVES = 3;
+const SD_KINDS = ['mirror', 'flip', 'turn', 'clone', 'tint', 'shade', 'sticker', 'zoom'];
+const SD_STICKERS = ['♥', '⭐', '🌸', '🦋', '🍀', '✨', '🎈', '🐞'];
+
+// charge la photo en essayant d'abord en CORS, pour pouvoir lire ses pixels
+function spotLoadImage(src) {
+  const load = (cors) => new Promise((resolve, reject) => {
+    const img = new Image();
+    if (cors) img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+  return load(true).catch(() => load(false));
+}
+
+// une mesure du détail de la photo autour d'un point, pour que les différences tombent sur quelque chose de visible
+function spotDetail(base) {
+  try {
+    const c = document.createElement('canvas');
+    c.width = SD_W; c.height = SD_H;
+    const x = c.getContext('2d');
+    x.drawImage(base, 0, 0, SD_W, SD_H);
+    const d = x.getImageData(0, 0, SD_W, SD_H).data;
+    const lum = (px, py) => { const i = (py * SD_W + px) * 4; return d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11; };
+    return (cx, cy, r) => {
+      let s = 0, n = 0;
+      for (let py = Math.max(1, Math.round(cy - r)); py < Math.min(SD_H - 1, cy + r); py += 3) {
+        for (let px = Math.max(1, Math.round(cx - r)); px < Math.min(SD_W - 1, cx + r); px += 3) {
+          s += Math.abs(lum(px + 1, py) - lum(px - 1, py)) + Math.abs(lum(px, py + 1) - lum(px, py - 1));
+          n++;
+        }
+      }
+      return n ? s / n : 0;
+    };
+  } catch {
+    return null; // photo sans CORS : on place les différences au hasard
+  }
+}
+
+function spotPlan(detail) {
+  const kinds = [...SD_KINDS].sort(() => Math.random() - 0.5).slice(0, SD_COUNT);
+  const diffs = [];
+  const free = (x, y, r) => diffs.every((d) => Math.hypot(d.x - x, d.y - y) > d.r + r + 14);
+  for (const kind of kinds) {
+    const r = 17 + Math.random() * 7;
+    let best = null;
+    for (let k = 0; k < 60; k++) {
+      const x = r + 6 + Math.random() * (SD_W - 2 * r - 12);
+      const y = r + 6 + Math.random() * (SD_H - 2 * r - 12);
+      if (!free(x, y, r)) continue;
+      // les retournements et copies ont besoin de détails ; couleurs et autocollants vont partout
+      const score = detail && !['tint', 'shade', 'sticker'].includes(kind) ? detail(x, y, r) : Math.random();
+      if (!best || score > best.score) best = { x, y, r, score };
+    }
+    if (!best) continue;
+    const d = { kind, x: best.x, y: best.y, r: best.r };
+    if (kind === 'clone') {
+      for (let k = 0; k < 40; k++) {
+        const sx = best.r + Math.random() * (SD_W - 2 * best.r), sy = best.r + Math.random() * (SD_H - 2 * best.r);
+        if (Math.hypot(sx - d.x, sy - d.y) > 4 * best.r) { d.sx = sx; d.sy = sy; break; }
+      }
+      if (d.sx === undefined) d.kind = 'tint';
+    }
+    if (d.kind === 'tint') d.hue = Math.floor(Math.random() * 360);
+    if (kind === 'shade') d.dark = Math.random() < 0.5;
+    if (kind === 'sticker') d.emoji = pick(SD_STICKERS);
+    diffs.push(d);
+  }
+  return diffs;
+}
+
+function spotEdit(ctx, base, d) {
+  const all = () => ctx.drawImage(base, 0, 0, SD_W, SD_H);
+  ctx.save();
+  if (d.kind === 'sticker') {
+    ctx.font = `${Math.round(d.r * 1.5)}px system-ui, "Apple Color Emoji", sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#ff4d6d';
+    ctx.fillText(d.emoji, d.x, d.y);
+    ctx.restore();
+    return;
+  }
+  ctx.beginPath();
+  ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
+  ctx.clip();
+  if (d.kind === 'mirror') { ctx.translate(2 * d.x, 0); ctx.scale(-1, 1); all(); }
+  else if (d.kind === 'flip') { ctx.translate(0, 2 * d.y); ctx.scale(1, -1); all(); }
+  else if (d.kind === 'turn') { ctx.translate(d.x, d.y); ctx.rotate(Math.PI / 2); ctx.translate(-d.x, -d.y); all(); }
+  else if (d.kind === 'zoom') { ctx.translate(d.x, d.y); ctx.scale(1.7, 1.7); ctx.translate(-d.x, -d.y); all(); }
+  else if (d.kind === 'clone') { ctx.translate(d.x - d.sx, d.y - d.sy); all(); }
+  else if (d.kind === 'tint') {
+    ctx.globalCompositeOperation = 'color';
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = `hsl(${d.hue} 95% 50%)`;
+    ctx.fillRect(d.x - d.r, d.y - d.r, 2 * d.r, 2 * d.r);
+  } else if (d.kind === 'shade') {
+    ctx.fillStyle = d.dark ? 'rgba(0,0,0,.55)' : 'rgba(255,255,255,.55)';
+    ctx.fillRect(d.x - d.r, d.y - d.r, 2 * d.r, 2 * d.r);
+  }
+  ctx.restore();
+}
+
+async function renderSpot() {
+  const today = todayParis();
+  const perRound = Number(state.settings?.spot_coins_per_round ?? 15);
+  const other = partner();
+  const solved = (p) => String(Number(p?.spot_rounds ?? 0));
+  const pool = puzzlePool();
+
+  $app.innerHTML = `
+    <section class="spot-page">
+      <a class="back-link" href="#/jeu">← Games</a>
+      <header class="page-head">
+        <h1>7 Differences</h1>
+        <p class="coins" id="coins">${Number(state.me.coins ?? 0)} ${COIN}</p>
+      </header>
+      <div class="scores">
+        <div><small class="muted">Found</small><b id="sd-found">0 / ${SD_COUNT}</b></div>
+        <div><small class="muted">Lives</small><b id="sd-lives">${'♥'.repeat(SD_LIVES)}</b></div>
+        <div><small class="muted">Photos solved</small><b id="sd-solved">${solved(state.me)}</b></div>
+        ${other ? `<div><small class="muted">${esc(other.display_name || 'Partner')}</small><b>${solved(other)}</b></div>` : ''}
+      </div>
+      <p class="muted small">Find the ${SD_COUNT} changes in the copy. A wrong tap costs a life. ${perRound} ${COIN} per photo solved.</p>
+      <div class="sd-board" id="sd-board">
+        ${pool.length ? `<div class="sd-pic" data-p="0"><canvas></canvas></div><div class="sd-pic" data-p="1"><canvas></canvas></div>` : '<p class="muted">Get some cards with photos first, then come back.</p>'}
+        <div class="mg-end" id="sd-end"></div>
+      </div>
+      ${pool.length ? '<div class="reveal-actions"><button class="btn ghost" id="sd-hint" type="button">Hint (costs a life)</button><button class="btn ghost" id="sd-new" type="button">Other photo</button></div>' : ''}
+    </section>`;
+  if (!pool.length) return;
+
+  const $ = (id) => document.getElementById(id);
+  const board = $('sd-board');
+  const pics = [...board.querySelectorAll('.sd-pic')];
+  const k = Math.min(3, Math.max(1, window.devicePixelRatio || 1));
+  let round = null; // { diffs, found:Set, lives, done }
+  let loading = false;
+
+  const end = (html) => {
+    const e = $('sd-end');
+    e.innerHTML = html ? `<div class="panel b-panel">${html}</div>` : '';
+    e.classList.toggle('on', !!html);
+  };
+  const mark = (cls, x, y, r) => pics.map((p) => {
+    const i = document.createElement('i');
+    i.className = `sd-ring ${cls}`;
+    i.style.left = `${(x / SD_W) * 100}%`;
+    i.style.top = `${(y / SD_H) * 100}%`;
+    i.style.width = `${((2 * r + 12) / SD_W) * 100}%`;
+    p.append(i);
+    return i;
+  });
+  const showStats = () => {
+    $('sd-found').textContent = `${round.found.size} / ${round.diffs.length}`;
+    $('sd-lives').textContent = round.lives > 0 ? '♥'.repeat(round.lives) : '—';
+  };
+
+  const newRound = async () => {
+    if (loading) return;
+    loading = true;
+    end('<p>Preparing the photo…</p>');
+    pics.forEach((p) => p.querySelectorAll('.sd-ring').forEach((i) => i.remove()));
+    let last = '';
+    try { last = localStorage.getItem('spotLast') || ''; } catch { /* rien */ }
+    const choices = pool.length > 1 ? pool.filter((c) => c.id !== last) : pool;
+    const c = pick(choices);
+    try { localStorage.setItem('spotLast', c.id); } catch { /* rien */ }
+    let img;
+    try {
+      const url = await signedUrls([c.image_path]);
+      img = await spotLoadImage(url(c.image_path));
+    } catch {
+      loading = false;
+      if (board.isConnected) end('<p>This photo would not load.</p><button class="btn primary" id="sd-retry" type="button">Try another</button>');
+      $('sd-retry')?.addEventListener('click', newRound);
+      return;
+    }
+    if (!board.isConnected) return;
+    // recadrage façon « cover » au format 4:3
+    const iw = img.naturalWidth, ih = img.naturalHeight;
+    const s = Math.max(SD_W / iw, SD_H / ih);
+    const sw = SD_W / s, sh = SD_H / s;
+    const base = document.createElement('canvas');
+    base.width = SD_W * k; base.height = SD_H * k;
+    base.getContext('2d').drawImage(img, (iw - sw) / 2, (ih - sh) / 2, sw, sh, 0, 0, SD_W * k, SD_H * k);
+    const diffs = spotPlan(spotDetail(base));
+    pics.forEach((p, n) => {
+      const cv = p.querySelector('canvas');
+      cv.width = SD_W * k; cv.height = SD_H * k;
+      const ctx = cv.getContext('2d');
+      ctx.setTransform(k, 0, 0, k, 0, 0);
+      ctx.drawImage(base, 0, 0, SD_W, SD_H);
+      if (n === 1) diffs.forEach((d) => spotEdit(ctx, base, d));
+    });
+    round = { diffs, found: new Set(), lives: SD_LIVES, done: false, card: c.id };
+    showStats();
+    end('');
+    loading = false;
+  };
+
+  const win = () => {
+    round.done = true;
+    end(`<h2>All ${SD_COUNT} found!</h2><p id="sd-gain" class="muted small">…</p><button class="btn primary" id="sd-next" type="button">Next photo</button>`);
+    $('sd-next').addEventListener('click', newRound);
+    sb.rpc('spot_round').then(({ data }) => {
+      if (!data) return;
+      state.me.coins = data.coins;
+      state.me.game_coins_on = today;
+      state.me.game_coins_today = data.today;
+      state.me.spot_rounds = data.rounds;
+      if ($('coins')) $('coins').textContent = `${data.coins} ${COIN}`;
+      if ($('sd-solved')) $('sd-solved').textContent = solved(state.me);
+      if ($('sd-gain')) $('sd-gain').textContent = data.gain ? `+${data.gain} ${COIN}` : data.today >= data.cap ? 'Daily coin limit reached' : 'No coins this time';
+    });
+  };
+  const lose = () => {
+    round.done = true;
+    round.diffs.forEach((d, i) => { if (!round.found.has(i)) mark('missed', d.x, d.y, d.r); });
+    setTimeout(() => {
+      if (!board.isConnected) return;
+      end(`<h2>Out of lives</h2><p>${round.found.size} / ${SD_COUNT} found. The missing ones are circled.</p><button class="btn primary" id="sd-again" type="button">Next photo</button><button class="btn ghost" id="sd-look" type="button">Look first</button>`);
+      $('sd-again').addEventListener('click', newRound);
+      $('sd-look').addEventListener('click', () => end(''));
+    }, 900);
+  };
+  const miss = () => {
+    round.lives--;
+    showStats();
+    board.classList.remove('sd-shake'); void board.offsetWidth; board.classList.add('sd-shake');
+    if (round.lives <= 0) lose();
+  };
+
+  pics.forEach((p) => p.addEventListener('pointerdown', (e) => {
+    if (!round || loading) return;
+    if (round.done) { if (!$('sd-end').classList.contains('on')) newRound(); return; }
+    const rect = p.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * SD_W;
+    const y = ((e.clientY - rect.top) / rect.height) * SD_H;
+    let hit = -1, bestD = Infinity;
+    round.diffs.forEach((d, i) => {
+      const dist = Math.hypot(d.x - x, d.y - y);
+      if (dist <= d.r + 12 && dist < bestD) { hit = i; bestD = dist; }
+    });
+    if (hit >= 0 && round.found.has(hit)) return; // déjà trouvée : pas de pénalité
+    if (hit >= 0) {
+      const d = round.diffs[hit];
+      round.found.add(hit);
+      mark('found', d.x, d.y, d.r);
+      showStats();
+      if (round.found.size === round.diffs.length) setTimeout(win, 500);
+    } else {
+      mark('wrong', x, y, 8).forEach((i) => setTimeout(() => i.remove(), 700));
+      miss();
+    }
+  }));
+
+  $('sd-hint').addEventListener('click', () => {
+    if (!round || round.done || loading) return;
+    const left = round.diffs.map((d, i) => i).filter((i) => !round.found.has(i));
+    if (!left.length) return;
+    const d = round.diffs[pick(left)];
+    mark('hint', d.x, d.y, d.r).forEach((i) => setTimeout(() => i.remove(), 1600));
+    miss();
+  });
+  $('sd-new').addEventListener('click', newRound);
+  board.sdState = () => round && { diffs: round.diffs.map((d) => ({ ...d })), found: [...round.found], lives: round.lives, done: round.done }; // lecture seule, pour les tests
+
+  await newRound();
+}
+
 /* ---------- profil ---------- */
 
 function renderProfil() {
@@ -2502,6 +2780,7 @@ function renderProfil() {
           <label>Puzzle: coins per piece<span class="pct"><input name="puzzle_coins_per_piece" type="number" inputmode="numeric" min="0" step="1" value="${Number(state.settings?.puzzle_coins_per_piece ?? 2)}">${COIN}</span></label>
           <label>Burger Shop: coins per order<span class="pct"><input name="burger_coins_per_order" type="number" inputmode="numeric" min="0" step="1" value="${Number(state.settings?.burger_coins_per_order ?? 4)}">${COIN}</span></label>
           <label>2048 Cards: coins per card from 128<span class="pct"><input name="merge_coins_per_tile" type="number" inputmode="numeric" min="0" step="1" value="${Number(state.settings?.merge_coins_per_tile ?? 5)}">${COIN}</span></label>
+          <label>7 Differences: coins per photo solved<span class="pct"><input name="spot_coins_per_round" type="number" inputmode="numeric" min="0" step="1" value="${Number(state.settings?.spot_coins_per_round ?? 15)}">${COIN}</span></label>
           <label>Marbles: coins per level<span class="pct"><input name="marbles_coins_per_level" type="number" inputmode="numeric" min="0" step="1" value="${Number(state.settings?.marbles_coins_per_level ?? 10)}">${COIN}</span></label>
           <label>Daily coin limit for games<span class="pct"><input name="games_daily_cap" type="number" inputmode="numeric" min="0" step="1" value="${Number(state.settings?.games_daily_cap ?? 60)}">${COIN}</span></label>
         </div>
@@ -2549,7 +2828,7 @@ function renderProfil() {
     if (Math.round(rateSum() * 100) / 100 !== 100) return toast('The rarity rates must add up to 100%', 'err');
     const patch = { updated_at: new Date().toISOString() };
     for (const k of [...RARITIES.map((r) => `rate_${r.id}`), 'holo_chance', 'gold_chance', 'cooldown_hours']) patch[k] = Number(ratesForm[k].value);
-    for (const k of ['pack_price', 'max_stored_packs', 'blocks_coins_per_line', 'puzzle_coins_per_piece', 'burger_coins_per_order', 'marbles_coins_per_level', 'merge_coins_per_tile', 'games_daily_cap', ...RARITIES.map((r) => `coins_${r.id}`)]) patch[k] = Math.round(Number(ratesForm[k].value));
+    for (const k of ['pack_price', 'max_stored_packs', 'blocks_coins_per_line', 'puzzle_coins_per_piece', 'burger_coins_per_order', 'marbles_coins_per_level', 'merge_coins_per_tile', 'spot_coins_per_round', 'games_daily_cap', ...RARITIES.map((r) => `coins_${r.id}`)]) patch[k] = Math.round(Number(ratesForm[k].value));
     const { data, error } = await sb.from('game_settings').update(patch).eq('id', 1).select().maybeSingle();
     if (error) return toast(error.message, 'err');
     if (data) state.settings = data;
@@ -2559,7 +2838,7 @@ function renderProfil() {
 
 /* ---------- routeur ---------- */
 
-const routes = { booster: renderBooster, collection: renderCollection, jeu: renderJeu, blocks: renderBlocks, memory: renderMemory, puzzle: renderPuzzle, burger: renderBurger, marbles: renderMarbles, merge: renderMerge, ajouter: renderAjouter, profil: renderProfil };
+const routes = { booster: renderBooster, collection: renderCollection, jeu: renderJeu, blocks: renderBlocks, memory: renderMemory, puzzle: renderPuzzle, burger: renderBurger, marbles: renderMarbles, merge: renderMerge, spot: renderSpot, ajouter: renderAjouter, profil: renderProfil };
 
 async function route() {
   clearInterval(state.timer);
@@ -2567,7 +2846,7 @@ async function route() {
   const name = (location.hash.replace(/^#\/?/, '') || 'booster').split('?')[0];
   const page = routes[name] ? name : 'booster';
   $nav.hidden = false;
-  const tab = ['blocks', 'memory', 'puzzle', 'burger', 'marbles', 'merge'].includes(page) ? 'jeu' : page;
+  const tab = ['blocks', 'memory', 'puzzle', 'burger', 'marbles', 'merge', 'spot'].includes(page) ? 'jeu' : page;
   $nav.querySelectorAll('a').forEach((a) => a.classList.toggle('active', a.dataset.route === tab));
   try {
     await routes[page]();

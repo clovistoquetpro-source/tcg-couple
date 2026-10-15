@@ -808,3 +808,21 @@ input:focus, select:focus { outline: 2px solid var(--rose); outline-offset: 1px;
 .mg-end { position: absolute; inset: 0; z-index: 5; display: none; align-items: center; justify-content: center; padding: 14px; border-radius: 16px; background: rgba(20,13,24,.72); }
 .mg-end.on { display: flex; }
 .merge-page > .small { margin: 0; }
+
+/* ---------- 7 Differences ---------- */
+.spot-art { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; gap: 4px; padding: 6px; }
+.spot-art i { position: relative; border-radius: 5px; background: linear-gradient(135deg, #ff9eb5, #7fb6ff 60%, #8de0a5); }
+.spot-art b { position: absolute; right: 22%; top: 18%; width: 12px; height: 12px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px #ff4d6d; }
+.sd-board { position: relative; display: grid; gap: 8px; width: min(100%, 480px); margin: 10px auto 0; }
+.sd-board.sd-shake { animation: shake .3s linear; }
+.sd-pic { position: relative; aspect-ratio: 4 / 3; border-radius: 12px; overflow: hidden; background: var(--bg2); border: 1px solid var(--line); touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.sd-pic canvas { display: block; width: 100%; height: 100%; }
+.sd-pic + .sd-pic::after { content: 'Copy'; position: absolute; left: 6px; top: 6px; padding: 1px 7px; border-radius: 8px; background: rgba(20,10,25,.7); color: #fff; font-size: .7rem; pointer-events: none; }
+.sd-ring { position: absolute; aspect-ratio: 1; transform: translate(-50%, -50%); border-radius: 50%; pointer-events: none; border: 3px solid #36e07a; box-shadow: 0 0 0 2px rgba(0,0,0,.45), 0 0 10px rgba(54,224,122,.7); animation: sd-in .25s ease; }
+.sd-ring.wrong { border-color: #ff4d6d; box-shadow: 0 0 0 2px rgba(0,0,0,.45); }
+.sd-ring.missed { border-color: #ffc933; border-style: dashed; }
+.sd-ring.hint { border-color: #fff; animation: sd-blink .4s ease infinite alternate; }
+@keyframes sd-in { from { transform: translate(-50%, -50%) scale(1.8); opacity: 0; } }
+@keyframes sd-blink { to { opacity: .2; } }
+.sd-board .mg-end { border-radius: 12px; }
+.spot-page > .small { margin: 0; }
